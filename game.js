@@ -21,13 +21,15 @@ const state = {
         tileSize: 32,
         tiles: [],
         chunks: [],
-        chunkSize: 16, // 16x16 tiles per chunk
-        explored: null, // Will be Uint8Array
-        visionRadius: 20
+        chunkSize: 16, 
+        explored: null, 
+        visionRadius: 20,
+        fogOfWarEnabled: true
     },
     resources: {
         wood: 0,
-        stone: 0
+        stone: 0,
+        berries: 0
     },
     entities: [],
     jobs: [],
@@ -109,7 +111,28 @@ Noise.init();
 function updateResourceUI() {
     document.getElementById('wood-count').textContent = state.resources.wood;
     document.getElementById('stone-count').textContent = state.resources.stone;
-    document.getElementById('berries-count').textContent = state.resources.berries;
+    document.getElementById('berries-count').textContent = state.resources.berries || 0;
+}
+
+function updateCharacterMenu() {
+    const list = document.getElementById('character-list');
+    if (!list) return;
+    
+    list.innerHTML = '';
+    state.entities.forEach(ent => {
+        const card = document.createElement('div');
+        card.className = `character-card ${state.selectedEntity === ent ? 'selected' : ''}`;
+        card.onclick = (e) => {
+            e.stopPropagation();
+            selectEntity(ent);
+        };
+        
+        card.innerHTML = `
+            <div class="character-avatar" style="background: ${ent.color}">👤</div>
+            <div class="character-name">${ent.name}</div>
+        `;
+        list.appendChild(card);
+    });
 }
 
 // Initialize Map
@@ -124,34 +147,46 @@ function initMap() {
     for (let y = 0; y < state.map.height; y++) {
         const row = [];
         for (let x = 0; x < state.map.width; x++) {
-            // Elevation noise (determines land vs water vs mountain)
-            const elevation = Noise.fbm((x + seedX) * 0.02, (y + seedY) * 0.02, 6);
-            // Moisture noise (determines forest vs desert)
-            const moisture = Noise.fbm((x + moistureSeedX) * 0.03, (y + moistureSeedY) * 0.03, 4);
+            const nx = x + seedX;
+            const ny = y + seedY;
+
+            // 1. Continental Noise (very low frequency - the "macro" shape)
+            const continent = Noise.fbm(nx * 0.004, ny * 0.004, 3);
             
-            let type = TILE_TYPES.GRASS;
+            // 2. Detail Noise (higher frequency - the "roughness" for coasts and terrain)
+            const detail = Noise.fbm(nx * 0.02, ny * 0.02, 4);
             
-            // Terrain Rules
-            if (elevation < 0.25) {
-                type = TILE_TYPES.DEEP_WATER;
-            } else if (elevation < 0.35) {
-                type = TILE_TYPES.WATER;
-            } else if (elevation < 0.38) {
-                type = TILE_TYPES.SAND;
-            } else if (elevation > 0.75) { // Lowered threshold for stone (0.8 -> 0.75)
-                type = TILE_TYPES.STONE;
+            // 3. Combined Elevation (80% macro shape + 20% detail for natural edges)
+            const elevation = (continent * 0.8 + detail * 0.2);
+            
+            // 4. Moisture Noise (separate noise for biomes)
+            const moisture = Noise.fbm(nx * 0.015 + 2000, ny * 0.015 + 2000, 3);
+
+            let type;
+            const sea_level = 0.42;
+
+            if (elevation < sea_level) {
+                // Ocean
+                if (elevation < sea_level - 0.15) type = TILE_TYPES.DEEP_WATER;
+                else type = TILE_TYPES.WATER;
             } else {
-                // Biome Rules based on moisture
-                if (moisture > 0.7) { 
-                    // High moisture - trees or berry bushes
-                    const rand = Math.random();
-                    if (rand < 0.3) type = TILE_TYPES.TREE; 
-                    else if (rand < 0.45) type = TILE_TYPES.BERRY_BUSH;
-                    else type = TILE_TYPES.GRASS;
+                // Land
+                if (elevation < sea_level + 0.02) {
+                    type = TILE_TYPES.SAND; // Coastline
+                } else if (elevation > 0.82) {
+                    type = TILE_TYPES.STONE; // Mountain peaks
+                } else {
+                    // Biomes based on moisture
+                    if (moisture > 0.75) {
+                        const rand = Math.random();
+                        if (rand < 0.3) type = TILE_TYPES.TREE;
+                        else if (rand < 0.45) type = TILE_TYPES.BERRY_BUSH;
+                        else type = TILE_TYPES.GRASS;
+                    }
+                    else if (moisture > 0.44) type = TILE_TYPES.GRASS;
+                    else if (moisture > 0.37) type = TILE_TYPES.SOIL;
+                    else type = TILE_TYPES.SAND; // Desert
                 }
-                else if (moisture > 0.5) type = TILE_TYPES.GRASS;
-                else if (moisture > 0.3) type = TILE_TYPES.SOIL;
-                else type = TILE_TYPES.SAND; // Desert
             }
             
             // Guarantee safe start area (center)
@@ -215,7 +250,7 @@ function updateChunk(chunk) {
             
             if (gy < state.map.height && gx < state.map.width) {
                 // Fog of War check
-                if (state.map.explored[gy * state.map.width + gx] === 0) continue;
+                if (state.map.fogOfWarEnabled && state.map.explored[gy * state.map.width + gx] === 0) continue;
 
                 const tile = state.map.tiles[gy][gx];
                 ctx.fillStyle = tile.type.color;
@@ -224,22 +259,29 @@ function updateChunk(chunk) {
                 // Add visual detail for special tiles
                 if (tile.type === TILE_TYPES.GRASS) {
                     // Detailed grass blades
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
                     ctx.lineWidth = 1;
-                    for (let i = 0; i < 4; i++) {
-                        const ox = (gx * 13 + i * 9) % (ts - 4) + 2;
-                        const oy = (gy * 17 + i * 13) % (ts - 4) + 4;
-                        const h = 3 + (gx + gy + i) % 4;
+                    ctx.lineCap = 'round';
+                    for (let i = 0; i < 6; i++) {
+                        const ox = (gx * 13 + i * 9) % (ts - 6) + 3;
+                        const oy = (gy * 17 + i * 13) % (ts - 6) + 6;
+                        const h = 4 + (gx + gy + i) % 5;
+                        const angle = ((gx + gy + i) % 10 - 5) * 0.1; // Slight lean
+                        
+                        // Use a slightly lighter/yellowish green for highlights
+                        ctx.strokeStyle = `rgba(160, 210, 100, ${0.4 + (i % 3) * 0.1})`;
+                        
                         ctx.beginPath();
                         ctx.moveTo(lx * ts + ox, ly * ts + oy);
-                        ctx.lineTo(lx * ts + ox + 1, ly * ts + oy - h);
+                        ctx.lineTo(lx * ts + ox + angle * h, ly * ts + oy - h);
                         ctx.stroke();
                         
                         // Add a second tiny blade for a tuft effect
-                        ctx.beginPath();
-                        ctx.moveTo(lx * ts + ox + 2, ly * ts + oy);
-                        ctx.lineTo(lx * ts + ox + 3, ly * ts + oy - h + 1);
-                        ctx.stroke();
+                        if (i % 2 === 0) {
+                            ctx.beginPath();
+                            ctx.moveTo(lx * ts + ox + 2, ly * ts + oy);
+                            ctx.lineTo(lx * ts + ox + 2 + angle * (h-1), ly * ts + oy - h + 1);
+                            ctx.stroke();
+                        }
                     }
                 } else if (tile.type === TILE_TYPES.SOIL) {
                     // Small gray pebbles
@@ -310,6 +352,7 @@ function markTileDirty(tx, ty) {
 }
 
 function updateFogOfWar() {
+    if (!state.map.explored) return;
     state.entities.forEach(ent => {
         const radius = state.map.visionRadius;
         const startX = Math.max(0, Math.floor(ent.x - radius));
@@ -418,6 +461,7 @@ function initEntities() {
         needs: { food: 100, rest: 100 },
         path: []
     });
+    updateCharacterMenu();
 }
 
 // --- Pathfinding (A*) ---
@@ -515,7 +559,11 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('mousedown', (e) => {
     // Prevent clicking through UI
-    if (e.target.closest('#top-bar') || e.target.closest('#bottom-menu') || e.target.closest('#inspect-panel')) {
+    if (e.target.closest('#top-bar') || 
+        e.target.closest('#bottom-menu') || 
+        e.target.closest('#inspect-panel') || 
+        e.target.closest('#character-menu') || 
+        e.target.closest('#regen-btn')) {
         return;
     }
 
@@ -536,21 +584,30 @@ window.addEventListener('mousedown', (e) => {
         if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
             const existingJob = state.jobs.find(j => j.x === tx && j.y === ty);
             if (!existingJob) {
+                let job = null;
                 if (state.currentOrder === 'architect') {
                     if (state.map.tiles[ty][tx].type !== TILE_TYPES.WALL) {
-                        state.jobs.push({ type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false });
+                        job = { type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false };
                     }
                 } else if (state.currentOrder === 'chop') {
                     if (state.map.tiles[ty][tx].type === TILE_TYPES.TREE || state.map.tiles[ty][tx].type === TILE_TYPES.BERRY_BUSH) {
-                        state.jobs.push({ type: 'chop', x: tx, y: ty, progress: 0, assigned: false });
+                        job = { type: 'chop', x: tx, y: ty, progress: 0, assigned: false };
                     }
                 } else if (state.currentOrder === 'mine') {
                     if (state.map.tiles[ty][tx].type === TILE_TYPES.STONE) {
-                        state.jobs.push({ type: 'mine', x: tx, y: ty, progress: 0, assigned: false });
+                        job = { type: 'mine', x: tx, y: ty, progress: 0, assigned: false };
                     }
                 } else if (state.currentOrder === 'unarchitect') {
                     if (state.map.tiles[ty][tx].type === TILE_TYPES.WALL) {
-                        state.jobs.push({ type: 'destruct', x: tx, y: ty, progress: 0, assigned: false });
+                        job = { type: 'destruct', x: tx, y: ty, progress: 0, assigned: false };
+                    }
+                }
+
+                if (job) {
+                    state.jobs.push(job);
+                    // If an entity is selected, assign it immediately
+                    if (state.selectedEntity) {
+                        assignJobToEntity(state.selectedEntity, job);
                     }
                 }
             }
@@ -625,11 +682,13 @@ function selectEntity(ent) {
     state.selectedEntity = ent;
     ent.isManualMove = false; // Reset manual move on new selection
     updateInspectPanel(ent);
+    updateCharacterMenu();
 }
 
 function deselectEntity() {
     state.selectedEntity = null;
     document.getElementById('inspect-panel').classList.add('hidden');
+    updateCharacterMenu();
 }
 
 function updateInspectPanel(ent) {
@@ -665,8 +724,29 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
         e.preventDefault(); // Prevent scrolling
         deselectEntity();
+    } else if (e.code === 'KeyL') {
+        toggleFogOfWar();
+    } else if (e.code === 'KeyH') {
+        toggleUI();
     }
 });
+
+function toggleUI() {
+    const uiOverlay = document.getElementById('ui-overlay');
+    const isHidden = uiOverlay.classList.toggle('ui-hidden');
+    console.log(`UI ${isHidden ? 'hidden' : 'visible'}`);
+}
+
+function toggleFogOfWar() {
+    state.map.fogOfWarEnabled = !state.map.fogOfWarEnabled;
+    // Mark all chunks as dirty to re-render with/without fog
+    for (let cy = 0; cy < state.map.chunks.length; cy++) {
+        for (let cx = 0; cx < state.map.chunks[cy].length; cx++) {
+            state.map.chunks[cy][cx].dirty = true;
+        }
+    }
+    console.log(`Fog of War: ${state.map.fogOfWarEnabled ? 'Enabled' : 'Disabled'}`);
+}
 
 window.addEventListener('mousemove', (e) => {
     if (state.camera.isDragging) {
@@ -716,6 +796,27 @@ window.addEventListener('wheel', (e) => {
     }
 }, { passive: false });
 
+function assignJobToEntity(ent, job) {
+    // If entity already has a job, unassign it
+    if (ent.job) {
+        ent.job.assigned = false;
+    }
+    
+    ent.job = job;
+    job.assigned = true;
+    
+    if (isPathClearOfWater(ent.x, ent.y, job.x, job.y)) {
+        ent.path = [{ x: job.x + 0.5, y: job.y + 0.5 }];
+        ent.target = ent.path[0];
+    } else {
+        const path = findPath(ent.x, ent.y, job.x, job.y);
+        if (path) {
+            ent.path = path;
+            ent.target = path[0];
+        }
+    }
+}
+
 // Update Game State
 function update() {
     updateFogOfWar();
@@ -736,27 +837,14 @@ function update() {
 
     // Update Entities
     state.entities.forEach(ent => {
-        // Freeze selected entity UNLESS it's a manual move command
-        if (state.selectedEntity === ent && !ent.isManualMove) return;
+        // Freeze selected entity UNLESS it's a manual move command OR a job
+        if (state.selectedEntity === ent && !ent.isManualMove && !ent.job) return;
 
         // Find job if idle
         if (!ent.job && !ent.target) {
             const availableJob = state.jobs.find(j => !j.assigned);
             if (availableJob) {
-                if (isPathClearOfWater(ent.x, ent.y, availableJob.x, availableJob.y)) {
-                    ent.job = availableJob;
-                    availableJob.assigned = true;
-                    ent.path = [{ x: availableJob.x + 0.5, y: availableJob.y + 0.5 }];
-                    ent.target = ent.path[0];
-                } else {
-                    const path = findPath(ent.x, ent.y, availableJob.x, availableJob.y);
-                    if (path) {
-                        ent.job = availableJob;
-                        availableJob.assigned = true;
-                        ent.path = path;
-                        ent.target = path[0];
-                    }
-                }
+                assignJobToEntity(ent, availableJob);
             }
         }
 
@@ -1026,16 +1114,62 @@ function render() {
 // Global functions for UI
 window.regenerateWorld = function() {
     initMap();
-    updateFogOfWar();
-    // Reset colonist positions to center
+    
+    // Reset colonist positions to a valid land tile within 5 tiles of each other
+    let baseSpawnX = state.map.width / 2;
+    let baseSpawnY = state.map.height / 2;
+    
+    // Find ALL valid land tiles
+    const landTiles = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            if (!tile.type.solid && 
+                tile.type !== TILE_TYPES.WATER && 
+                tile.type !== TILE_TYPES.DEEP_WATER) {
+                landTiles.push({x, y});
+            }
+        }
+    }
+
+    if (landTiles.length > 0) {
+        const randomBase = landTiles[Math.floor(Math.random() * landTiles.length)];
+        baseSpawnX = randomBase.x;
+        baseSpawnY = randomBase.y;
+    }
+
     state.entities.forEach(ent => {
-        ent.x = state.map.width / 2 + (Math.random() - 0.5);
-        ent.y = state.map.height / 2 + (Math.random() - 0.5);
+        let spawnX = baseSpawnX;
+        let spawnY = baseSpawnY;
+        
+        // Try to find a land tile within 5 tiles of the base spawn
+        const nearbyLand = landTiles.filter(t => 
+            Math.abs(t.x - baseSpawnX) <= 5 && 
+            Math.abs(t.y - baseSpawnY) <= 5
+        );
+
+        if (nearbyLand.length > 0) {
+            const randomTile = nearbyLand[Math.floor(Math.random() * nearbyLand.length)];
+            spawnX = randomTile.x;
+            spawnY = randomTile.y;
+        }
+        
+        ent.x = spawnX + 0.5;
+        ent.y = spawnY + 0.5;
         ent.target = null;
         ent.job = null;
+        ent.path = [];
     });
+    
     state.jobs = [];
-    console.log("World regenerated");
+    
+    // Center camera on the group
+    state.camera.x = -(baseSpawnX * state.map.tileSize);
+    state.camera.y = -(baseSpawnY * state.map.tileSize);
+    
+    updateCharacterMenu();
+    updateFogOfWar();
+    console.log("World regenerated and camera centered on colonists");
 };
 
 window.setOrder = function(type) {
