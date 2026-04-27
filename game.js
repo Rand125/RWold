@@ -23,7 +23,7 @@ const state = {
         chunks: [],
         chunkSize: 16, // 16x16 tiles per chunk
         explored: null, // Will be Uint8Array
-        visionRadius: 10
+        visionRadius: 20
     },
     resources: {
         wood: 0,
@@ -219,28 +219,65 @@ function updateChunk(chunk) {
                 ctx.fillRect(lx * ts, ly * ts, ts, ts);
 
                 // Add visual detail for special tiles
-                if (tile.type === TILE_TYPES.TREE) {
-                    // Draw a simple tree icon (trunk + canopy)
-                    ctx.fillStyle = '#5d4037'; // Brown trunk
+                if (tile.type === TILE_TYPES.GRASS) {
+                    // Small grass blades
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                    ctx.lineWidth = 1;
+                    for (let i = 0; i < 3; i++) {
+                        const ox = (gx * 13 + i * 7) % ts;
+                        const oy = (gy * 17 + i * 11) % ts;
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts + ox, ly * ts + oy);
+                        ctx.lineTo(lx * ts + ox + 2, ly * ts + oy - 4);
+                        ctx.stroke();
+                    }
+                } else if (tile.type === TILE_TYPES.SOIL) {
+                    // Small pebbles
+                    ctx.fillStyle = 'rgba(100, 100, 100, 0.4)';
+                    for (let i = 0; i < 4; i++) {
+                        const ox = (gx * 23 + i * 13) % (ts - 4) + 2;
+                        const oy = (gy * 29 + i * 19) % (ts - 4) + 2;
+                        ctx.beginPath();
+                        ctx.arc(lx * ts + ox, ly * ts + oy, 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else if (tile.type === TILE_TYPES.FOREST) {
+                    // Denser forest background with multiple trees
+                    ctx.fillStyle = '#2d5a27';
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    for (let i = 0; i < 2; i++) {
+                        const ox = (gx * 31 + i * 17) % (ts - 10) + 5;
+                        const oy = (gy * 37 + i * 23) % (ts - 10) + 5;
+                        
+                        // Trunk
+                        ctx.fillStyle = '#3e2723';
+                        ctx.fillRect(lx * ts + ox - 1, ly * ts + oy + 2, 2, 4);
+                        
+                        // Leaves
+                        ctx.fillStyle = '#1b5e20';
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts + ox, ly * ts + oy - 6);
+                        ctx.lineTo(lx * ts + ox - 5, ly * ts + oy + 3);
+                        ctx.lineTo(lx * ts + ox + 5, ly * ts + oy + 3);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                } else if (tile.type === TILE_TYPES.TREE) {
+                    // Improved big tree icon
+                    ctx.fillStyle = '#4e342e'; // Darker trunk
                     ctx.fillRect(lx * ts + ts * 0.4, ly * ts + ts * 0.6, ts * 0.2, ts * 0.3);
-                    ctx.fillStyle = '#1b5e20'; // Dark green leaves
+                    
+                    // Layered canopy
+                    ctx.fillStyle = '#2e7d32';
                     ctx.beginPath();
-                    ctx.arc(lx * ts + ts * 0.5, ly * ts + ts * 0.4, ts * 0.35, 0, Math.PI * 2);
+                    ctx.arc(lx * ts + ts * 0.5, ly * ts + ts * 0.45, ts * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#388e3c';
+                    ctx.beginPath();
+                    ctx.arc(lx * ts + ts * 0.4, ly * ts + ts * 0.35, ts * 0.2, 0, Math.PI * 2);
                     ctx.fill();
                 } else if (tile.type === TILE_TYPES.STONE) {
-                    // Draw stone "veins" or speckles
-                    ctx.fillStyle = '#9e9e9e';
-                    ctx.beginPath();
-                    ctx.arc(lx * ts + ts * 0.3, ly * ts + ts * 0.4, ts * 0.15, 0, Math.PI * 2);
-                    ctx.arc(lx * ts + ts * 0.7, ly * ts + ts * 0.6, ts * 0.2, 0, Math.PI * 2);
-                    ctx.arc(lx * ts + ts * 0.5, ly * ts + ts * 0.2, ts * 0.1, 0, Math.PI * 2);
-                    ctx.fill();
-                } else if (tile.type === TILE_TYPES.FOREST) {
-                    // Small leaf detail for forest tiles
-                    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-                    ctx.fillRect(lx * ts + ts * 0.2, ly * ts + ts * 0.2, ts * 0.2, ts * 0.2);
-                    ctx.fillRect(lx * ts + ts * 0.6, ly * ts + ts * 0.6, ts * 0.2, ts * 0.2);
-                }
             }
         }
     }
@@ -606,6 +643,13 @@ function screenToWorld(screenX, screenY) {
     const y = (screenY - canvas.height / 2) / state.camera.zoom - state.camera.y;
     return { x, y };
 }
+
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+        e.preventDefault(); // Prevent scrolling
+        deselectEntity();
+    }
+});
 
 window.addEventListener('mousemove', (e) => {
     if (state.camera.isDragging) {
