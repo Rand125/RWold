@@ -25,7 +25,6 @@ const state = {
         explored: null, // Will be Uint8Array
         visionRadius: 20
     },
-    
     resources: {
         wood: 0,
         stone: 0
@@ -46,7 +45,7 @@ const state = {
 // Tile Types
 const TILE_TYPES = {
     GRASS: { color: '#4a7c44', name: 'Grass', moveCost: 1 },
-    FOREST: { color: '#2d5a27', name: 'Forest', moveCost: 2 },
+    BERRY_BUSH: { color: '#388e3c', name: 'Berry Bush', solid: true, harvestable: 'berries' },
     SOIL: { color: '#5d4037', name: 'Soil', moveCost: 1.2 },
     WATER: { color: '#1976d2', name: 'Water', moveCost: 3 },
     DEEP_WATER: { color: '#0d47a1', name: 'Deep Water', solid: true },
@@ -110,6 +109,7 @@ Noise.init();
 function updateResourceUI() {
     document.getElementById('wood-count').textContent = state.resources.wood;
     document.getElementById('stone-count').textContent = state.resources.stone;
+    document.getElementById('berries-count').textContent = state.resources.berries;
 }
 
 // Initialize Map
@@ -142,10 +142,12 @@ function initMap() {
                 type = TILE_TYPES.STONE;
             } else {
                 // Biome Rules based on moisture
-                if (moisture > 0.7) { // Lowered threshold for forest (0.75 -> 0.7)
-                    // High moisture - forest or trees
-                    if (Math.random() < 0.2) type = TILE_TYPES.TREE; // Increased tree chance (0.15 -> 0.2)
-                    else type = TILE_TYPES.FOREST;
+                if (moisture > 0.7) { 
+                    // High moisture - trees or berry bushes
+                    const rand = Math.random();
+                    if (rand < 0.3) type = TILE_TYPES.TREE; 
+                    else if (rand < 0.45) type = TILE_TYPES.BERRY_BUSH;
+                    else type = TILE_TYPES.GRASS;
                 }
                 else if (moisture > 0.5) type = TILE_TYPES.GRASS;
                 else if (moisture > 0.3) type = TILE_TYPES.SOIL;
@@ -251,39 +253,24 @@ function updateChunk(chunk) {
                         ctx.arc(lx * ts + ox, ly * ts + oy, size, 0, Math.PI * 2);
                         ctx.fill();
                     }
-                } else if (tile.type === TILE_TYPES.FOREST) {
-                    // Dense layered forest
-                    ctx.fillStyle = '#2d5a27';
-                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                } else if (tile.type === TILE_TYPES.BERRY_BUSH) {
+                    // Berry Bush rendering (Dark green bush with red berries)
+                    ctx.fillStyle = '#2e7d32'; 
+                    ctx.beginPath();
+                    ctx.arc(lx * ts + ts * 0.5, ly * ts + ts * 0.6, ts * 0.35, 0, Math.PI * 2);
+                    ctx.fill();
                     
-                    for (let i = 0; i < 3; i++) {
-                        const ox = (gx * 31 + i * 11) % (ts - 12) + 6;
-                        const oy = (gy * 37 + i * 13) % (ts - 12) + 8;
-                        
-                        // Small Shadow
-                        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    // Berries
+                    ctx.fillStyle = '#e53935';
+                    for (let i = 0; i < 6; i++) {
+                        const ox = (gx * 31 + i * 13) % (ts - 10) + 5;
+                        const oy = (gy * 37 + i * 17) % (ts - 10) + 5;
                         ctx.beginPath();
-                        ctx.ellipse(lx * ts + ox, ly * ts + oy + 4, 4, 2, 0, 0, Math.PI * 2);
+                        ctx.arc(lx * ts + ox, ly * ts + oy, 2.2, 0, Math.PI * 2);
                         ctx.fill();
-
-                        // Trunk
-                        ctx.fillStyle = '#3e2723';
-                        ctx.fillRect(lx * ts + ox - 1, ly * ts + oy + 1, 2, 3);
-                        
-                        // Layered Conifer (3 levels)
-                        const colors = ['#1b5e20', '#2e7d32', '#388e3c'];
-                        for (let j = 0; j < 3; j++) {
-                            ctx.fillStyle = colors[j];
-                            ctx.beginPath();
-                            ctx.moveTo(lx * ts + ox, ly * ts + oy - 7 + j * 2);
-                            ctx.lineTo(lx * ts + ox - 5 + j, ly * ts + oy + 2 + j);
-                            ctx.lineTo(lx * ts + ox + 5 - j, ly * ts + oy + 2 + j);
-                            ctx.closePath();
-                            ctx.fill();
-                        }
                     }
                 } else if (tile.type === TILE_TYPES.TREE) {
-                    // Improved big tree icon
+                    // Big tree
                     ctx.fillStyle = '#4e342e'; // Darker trunk
                     ctx.fillRect(lx * ts + ts * 0.4, ly * ts + ts * 0.6, ts * 0.2, ts * 0.3);
                     
@@ -297,8 +284,8 @@ function updateChunk(chunk) {
                     ctx.arc(lx * ts + ts * 0.4, ly * ts + ts * 0.35, ts * 0.2, 0, Math.PI * 2);
                     ctx.fill();
                 } else if (tile.type === TILE_TYPES.STONE) {
-                    // Stone texture (cracks/spots)
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                    // Stone texture
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
                     for (let i = 0; i < 3; i++) {
                         const ox = (gx * 37 + i * 11) % (ts - 8) + 4;
                         const oy = (gy * 41 + i * 13) % (ts - 8) + 4;
@@ -397,7 +384,7 @@ function isPathClearOfWater(startX, startY, endX, endY) {
 function initEntities() {
     state.entities.push({
         id: 1,
-        name: 'John',
+        name: 'Yarec Burmaldec',
         x: 50.5,
         y: 50.5,
         color: '#ffcc80',
@@ -409,7 +396,7 @@ function initEntities() {
     });
     state.entities.push({
         id: 2,
-        name: 'Sarah',
+        name: 'Arcenec Burmaldec',
         x: 51.5,
         y: 50.5,
         color: '#f48fb1',
@@ -421,7 +408,7 @@ function initEntities() {
     });
     state.entities.push({
         id: 3,
-        name: 'Pete',
+        name: 'Timurec Burmaldec',
         x: 50.5,
         y: 51.5,
         color: '#90caf9',
@@ -554,7 +541,7 @@ window.addEventListener('mousedown', (e) => {
                         state.jobs.push({ type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false });
                     }
                 } else if (state.currentOrder === 'chop') {
-                    if (state.map.tiles[ty][tx].type === TILE_TYPES.TREE) {
+                    if (state.map.tiles[ty][tx].type === TILE_TYPES.TREE || state.map.tiles[ty][tx].type === TILE_TYPES.BERRY_BUSH) {
                         state.jobs.push({ type: 'chop', x: tx, y: ty, progress: 0, assigned: false });
                     }
                 } else if (state.currentOrder === 'mine') {
@@ -815,8 +802,13 @@ function update() {
                 if (ent.job.type === 'build_wall') {
                     state.map.tiles[ty][tx].type = TILE_TYPES.WALL;
                 } else if (ent.job.type === 'chop') {
+                    const tile = state.map.tiles[ty][tx];
+                    if (tile.type === TILE_TYPES.BERRY_BUSH) {
+                        state.resources.berries += 15;
+                    } else {
+                        state.resources.wood += 20;
+                    }
                     state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
-                    state.resources.wood += 20;
                 } else if (ent.job.type === 'mine') {
                     state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
                     state.resources.stone += 20;
