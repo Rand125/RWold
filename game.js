@@ -663,7 +663,7 @@ window.addEventListener('mousedown', (e) => {
                     }
                 }
             }
-        }
+        
     } else if (e.button === 0 && state.selectedEntity) {
     const worldPos = screenToWorld(e.clientX, e.clientY);
     const tx = Math.floor(worldPos.x / state.map.tileSize);
