@@ -655,7 +655,7 @@ window.addEventListener('mousedown', (e) => {
                     }
                 }
 
-                if (job) {
+                                if (job) {
                     state.jobs.push(job);
                     // If an entity is selected, assign it immediately
                     if (state.selectedEntity) {
@@ -664,7 +664,7 @@ window.addEventListener('mousedown', (e) => {
                 }
             }
         }
-     else if (e.button === 0 && state.selectedEntity) {
+    } else if (e.button === 0 && state.selectedEntity) {
     const worldPos = screenToWorld(e.clientX, e.clientY);
     const tx = Math.floor(worldPos.x / state.map.tileSize);
     const ty = Math.floor(worldPos.y / state.map.tileSize);
