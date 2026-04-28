@@ -114,7 +114,57 @@ function updateResourceUI() {
     document.getElementById('stone-count').textContent = state.resources.stone;
     document.getElementById('berries-count').textContent = state.resources.berries || 0;
 }
+// ========== СИСТЕМА СООБЩЕНИЙ ==========
+function addMessage(text, type = 'info') {
+    // type: 'info', 'success', 'warning', 'error'
+    const message = {
+        id: Date.now() + Math.random(),
+        text: text,
+        type: type,
+        time: Date.now()
+    };
+    state.messages.push(message);
+    
+    // Удаляем старые сообщения (оставляем максимум 10)
+    if (state.messages.length > 10) {
+        state.messages.shift();
+    }
+    
+    // Обновляем отображение сообщений
+    updateMessageUI();
+}
 
+function updateMessageUI() {
+    const container = document.getElementById('message-log');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    // Показываем последние 6 сообщений
+    const recentMessages = state.messages.slice(-6);
+    
+    for (const msg of recentMessages) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${msg.type}`;
+        
+        // Форматируем время
+        const date = new Date(msg.time);
+        const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+        
+        msgDiv.innerHTML = `<span class="msg-time">[${timeStr}]</span> <span class="msg-text">${msg.text}</span>`;
+        container.appendChild(msgDiv);
+    }
+    
+    // Автоскролл вниз
+    container.scrollTop = container.scrollHeight;
+}
+
+// Очистка старых сообщений каждую минуту (опционально)
+setInterval(() => {
+    const oneMinuteAgo = Date.now() - 60000;
+    state.messages = state.messages.filter(msg => msg.time > oneMinuteAgo);
+    updateMessageUI();
+}, 30000);
 function updateCharacterMenu() {
     const list = document.getElementById('character-list');
     if (!list) return;
