@@ -46,7 +46,9 @@ const state = {
 
 // Tile Types
 const TILE_TYPES = {
-    GRASS: { color: '#4a7c44', name: 'Grass', moveCost: 1 },
+    GRASS: { color: 'rgb(95, 94, 40)', name: 'Grass', moveCost: 1 },
+    LIGHT_GRASS: { color: 'rgb(125, 124, 60)', name: 'Light Grass', moveCost: 1 },
+    DARK_GRASS: { color: 'rgb(65, 64, 20)', name: 'Dark Grass', moveCost: 1.1 },
     SOIL: { color: '#5d4037', name: 'Soil', moveCost: 1.2 },
     WATER: { color: '#1976d2', name: 'Water', moveCost: 3 },
     DEEP_WATER: { color: '#0d47a1', name: 'Deep Water', solid: true },
@@ -171,7 +173,9 @@ function initMap() {
                     type = TILE_TYPES.STONE; // Mountain peaks
                 } else {
                     // Biomes based on moisture
-                    if (moisture > 0.44) type = TILE_TYPES.GRASS;
+                    if (moisture > 0.6) type = TILE_TYPES.DARK_GRASS;
+                    else if (moisture > 0.44) type = TILE_TYPES.GRASS;
+                    else if (moisture > 0.4) type = TILE_TYPES.LIGHT_GRASS;
                     else if (moisture > 0.37) type = TILE_TYPES.SOIL;
                     else type = TILE_TYPES.SAND; // Desert
                 }
@@ -243,15 +247,18 @@ function updateChunk(chunk) {
                 ctx.fillRect(lx * ts, ly * ts, ts, ts);
 
                 // Add visual detail for special tiles
-                if (tile.type === TILE_TYPES.GRASS) {
+                if (tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.LIGHT_GRASS || tile.type === TILE_TYPES.DARK_GRASS) {
                     ctx.lineWidth = 1;
                     ctx.lineCap = 'round';
+                    const grassColor = tile.type === TILE_TYPES.LIGHT_GRASS ? 'rgba(190, 240, 130,' : 
+                                      (tile.type === TILE_TYPES.DARK_GRASS ? 'rgba(120, 160, 80,' : 'rgba(160, 210, 100,');
+                    
                     for (let i = 0; i < 6; i++) {
                         const ox = (gx * 13 + i * 9) % (ts - 6) + 3;
                         const oy = (gy * 17 + i * 13) % (ts - 6) + 6;
                         const h = 4 + (gx + gy + i) % 5;
                         const angle = ((gx + gy + i) % 10 - 5) * 0.1;
-                        ctx.strokeStyle = `rgba(160, 210, 100, ${0.4 + (i % 3) * 0.1})`;
+                        ctx.strokeStyle = `${grassColor} ${0.4 + (i % 3) * 0.1})`;
                         ctx.beginPath();
                         ctx.moveTo(lx * ts + ox, ly * ts + oy);
                         ctx.lineTo(lx * ts + ox + angle * h, ly * ts + oy - h);
