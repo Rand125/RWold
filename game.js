@@ -1060,28 +1060,6 @@ function render() {
         }
     }
 
-    // Grid (only if zoomed in)
-    if (state.camera.zoom > 0.5) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-        ctx.lineWidth = 1 / state.camera.zoom;
-        ctx.beginPath();
-        
-        const startTX = Math.floor(worldViewLeft / state.map.tileSize);
-        const endTX = Math.ceil((worldViewLeft + viewW) / state.map.tileSize);
-        const startTY = Math.floor(worldViewTop / state.map.tileSize);
-        const endTY = Math.ceil((worldViewTop + viewH) / state.map.tileSize);
-
-        for (let x = Math.max(0, startTX); x <= Math.min(state.map.width, endTX); x++) {
-            ctx.moveTo(x * state.map.tileSize, Math.max(0, startTY) * state.map.tileSize);
-            ctx.lineTo(x * state.map.tileSize, Math.min(state.map.height, endTY) * state.map.tileSize);
-        }
-        for (let y = Math.max(0, startTY); y <= Math.min(state.map.height, endTY); y++) {
-            ctx.moveTo(Math.max(0, startTX) * state.map.tileSize, y * state.map.tileSize);
-            ctx.lineTo(Math.min(state.map.width, endTX) * state.map.tileSize, y * state.map.tileSize);
-        }
-        ctx.stroke();
-    }
-
     // Ghost wall for architect mode
     if (state.currentOrder === 'architect') {
         const mouseWorld = screenToWorld(state.camera.lastMouseX, state.camera.lastMouseY);
