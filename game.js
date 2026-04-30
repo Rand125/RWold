@@ -867,10 +867,7 @@ function update() {
             }
         }
         updateTimeUI();
-        const deltaMinutes = 1;
-        state.entities.forEach(ent => {
-            updateNeeds(ent, deltaMinutes);
-    });
+    }
 
     state.entities.forEach(ent => {
   
