@@ -443,7 +443,9 @@ function initEntities() {
         job: null,
         speed: 0.1,
         needs: { food: 100, rest: 100 },
-        path: []
+        path: [],
+        currentSpeedModifier: 1.0,
+        statusMessages: []
     });
     state.entities.push({
         id: 2,
@@ -455,7 +457,9 @@ function initEntities() {
         job: null,
         speed: 0.12,
         needs: { food: 100, rest: 100 },
-        path: []
+        path: [],
+        currentSpeedModifier: 1.0,
+        statusMessages: []
     });
     state.entities.push({
         id: 3,
@@ -467,7 +471,9 @@ function initEntities() {
         job: null,
         speed: 0.08,
         needs: { food: 100, rest: 100 },
-        path: []
+        path: [],
+        currentSpeedModifier: 1.0,
+        statusMessages: []
     });
     updateCharacterMenu();
 }
