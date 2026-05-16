@@ -8,18 +8,15 @@ body, html {
     font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
     color: #f0f0f0;
 }
-
 #game-container {
     position: relative;
     width: 100vw;
     height: 100vh;
 }
-
 #gameCanvas {
     display: block;
     cursor: crosshair;
 }
-
 #ui-overlay {
     position: fixed;
     top: 0;
@@ -29,41 +26,33 @@ body, html {
     pointer-events: none;
     z-index: 10;
 }
-
 #ui-overlay > * {
     pointer-events: auto;
     transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
 }
-
 #ui-overlay.ui-hidden > * {
     pointer-events: none;
 }
-
 #ui-overlay.ui-hidden #regen-btn {
     transform: translate(-100px, -100px);
     opacity: 0;
 }
-
 #ui-overlay.ui-hidden #top-bar {
     transform: translateX(-50%) translateY(-100px);
     opacity: 0;
 }
-
 #ui-overlay.ui-hidden #bottom-menu {
     transform: translateX(-50%) translateY(100px);
     opacity: 0;
 }
-
 #ui-overlay.ui-hidden #character-menu {
     transform: translate(100px, 100px);
     opacity: 0;
 }
-
 #ui-overlay.ui-hidden #inspect-panel {
     transform: translateX(-100px);
     opacity: 0;
 }
-
 #top-bar {
     position: absolute; 
     top: 20px;
@@ -80,19 +69,14 @@ body, html {
     box-sizing: border-box;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 24px;
-    box-shadow: 
-        0 4px 6px -1px rgba(0, 0, 0, 0.1), 
-        0 10px 15px -3px rgba(0, 0, 0, 0.2),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 10px 15px -3px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
-
 #resources {
     display: flex;
     align-items: center;
     font-weight: 600;
     letter-spacing: 0.3px;
 }
-
 #resources span {
     margin-right: 24px;
     color: #81c784;
@@ -100,7 +84,6 @@ body, html {
     align-items: center;
     gap: 6px;
 }
-
 #resources span::before {
     content: '';
     display: inline-block;
@@ -110,7 +93,6 @@ body, html {
     background: currentColor;
     box-shadow: 0 0 8px currentColor;
 }
-
 #time {
     font-weight: 700;
     color: #ffd54f;
@@ -118,7 +100,6 @@ body, html {
     padding: 4px 12px;
     border-radius: 12px;
 }
-
 #bottom-menu {
     position: absolute;
     bottom: 30px;
@@ -136,7 +117,6 @@ body, html {
     border-radius: 28px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
 }
-
 button {
     background: rgba(255, 255, 255, 0.03);
     color: #ffffff;
@@ -150,18 +130,15 @@ button {
     text-transform: none;
     letter-spacing: 0.2px;
 }
-
 button:hover {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-3px) scale(1.02);
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
 }
-
 button:active {
     transform: translateY(-1px) scale(0.98);
 }
-
 #inspect-panel {
     position: absolute;
     bottom: 120px;
@@ -176,13 +153,11 @@ button:active {
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
 }
-
 .hidden {
     display: none !important;
     opacity: 0;
     transform: translateY(10px);
 }
-
 #debug-time-panel {
     position: absolute;
     top: 100px;
@@ -196,20 +171,16 @@ button:active {
     gap: 10px;
     z-index: 1000;
 }
-
 #debug-time-panel label {
     color: #fff;
     font-size: 12px;
 }
-
 #time-slider {
     width: 200px;
 }
-
 #slider-time-display {
-    color: #ff0000;
+    color: #fff;
 }
-
 #regen-btn {
     position: absolute;
     top: 20px;
@@ -221,14 +192,29 @@ button:active {
     border-radius: 18px;
     color: #ffd54f;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    overflow: hidden;
+    position: relative;
+    padding: 12px 22px;
 }
-
+#regen-progress {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 0%;
+    background: rgba(255, 213, 79, 0.3);
+    pointer-events: none;
+    transition: width 0.1s linear;
+}
+#regen-text {
+    position: relative;
+    z-index: 2;
+}
 #regen-btn:hover {
     background: rgba(255, 213, 79, 0.15);
     border-color: #ffd54f;
     color: #fff;
 }
-
 #character-menu {
     position: absolute;
     bottom: 30px;
@@ -243,13 +229,11 @@ button:active {
     gap: 12px;
     min-width: 150px;
 }
-
 #character-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
-
 .character-card {
     display: flex;
     align-items: center;
@@ -261,16 +245,13 @@ button:active {
     transition: all 0.2s;
     border: 1px solid transparent;
 }
-
 .character-card:hover {
     background: rgba(255, 255, 255, 0.1);
 }
-
 .character-card.selected {
     background: rgba(79, 195, 247, 0.2);
     border-color: #4fc3f7;
 }
-
 .character-avatar {
     width: 32px;
     height: 32px;
@@ -281,23 +262,19 @@ button:active {
     justify-content: center;
     font-size: 18px;
 }
-
 .character-name {
     font-size: 14px;
     font-weight: 600;
 }
-
 #deselect-btn {
     background: rgba(229, 57, 53, 0.2) !important;
     border-color: rgba(229, 57, 53, 0.5) !important;
     color: #ef5350 !important;
 }
-
 #deselect-btn:hover {
     background: rgba(229, 57, 53, 0.4) !important;
     color: #fff !important;
 }
-
 #inspect-title {
     margin: 0 0 18px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -307,32 +284,20 @@ button:active {
     color: #4fc3f7;
     letter-spacing: -0.5px;
 }
-
 #inspect-content {
     line-height: 1.7;
     font-size: 15px;
     color: #e0e0e0;
 }
-
 #inspect-content p {
     margin: 8px 0;
 }
-
 .inspect-actions {
     display: flex;
     gap: 10px;
     margin: 15px 0;
 }
-
 .inspect-actions button {
     flex: 1;
-    padding: 8px 12px;
-    font-size: 12px;
-}
-
-.inspect-actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    background: rgba(255, 255, 255, 0.05);
+    padding: 8px;
 }

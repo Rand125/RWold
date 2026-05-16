@@ -10,7 +10,10 @@
     <div id="game-container">
         <canvas id="gameCanvas"></canvas>
         <div id="ui-overlay">
-            <button id="regen-btn" onclick="regenerateWorld()">Regen World</button>
+            <button id="regen-btn" onclick="regenerateWorld()">
+                <span id="regen-progress"></span>
+                <span id="regen-text">Regen World</span>
+            </button>
             <div id="top-bar">
                 <div id="resources">
                     Silver: <span id="silver-count">0</span>
@@ -26,17 +29,14 @@
                 <button onclick="setOrder('mine')">Mine</button>
                 <button onclick="setOrder('work')">Work</button>
             </div>
-
             <div id="character-menu">
                 <div id="character-list"></div>
                 <button id="deselect-btn" onclick="deselectEntity()">Deselect</button>
             </div>
-
             <div id="inspect-panel" class="hidden">
                 <h3 id="inspect-title">Colonist</h3>
                 <div id="inspect-content"></div>
             </div>
-
             <div id="debug-time-panel" class="hidden">
                 <label for="time-slider">Debug Time:</label>
                 <input type="range" id="time-slider" min="0" max="1439" value="480">
