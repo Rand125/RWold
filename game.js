@@ -13,8 +13,8 @@ const state = {
         dragStartY: 0
     },
     map: {
-        width: 500,
-        height: 500,
+        width: 512,
+        height: 512,
         tileSize: 32,
         tiles: [],
         chunks: [],
@@ -279,7 +279,7 @@ function updateChunk(chunk) {
             const gy = chunk.cy * size + ly;
             const gx = chunk.cx * size + lx;
             
-            let color = '#002f6c';
+            let color = 'rgba(0,0,0,0)';
             if (gy >= 0 && gy < state.map.height && gx >= 0 && gx < state.map.width) {
                 const tile = state.map.tiles[gy][gx];
                 if (tile.type === TILE_TYPES.WATER || tile.type === TILE_TYPES.DEEP_WATER) {
