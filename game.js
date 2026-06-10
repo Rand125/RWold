@@ -47,6 +47,16 @@ const state = {
         endX: 0,
         endY: 0
     },
+    mineRadius: {
+        active: false,
+        startX: 0,
+        startY: 0,
+        centerTileX: 0,
+        centerTileY: 0,
+        radius: 0
+    },
+    popups: [],
+    isWorkPaused: false,
     keys: {},
     keyPressTime: {}
 };
@@ -228,6 +238,69 @@ function initMap() {
         }
         state.map.chunks.push(row);
     }
+    // Генерация жил каменной руды
+    const generateOreVein = (startX, startY) => {
+        const veinSize = Math.floor(Math.random() * 4) + 2; // 2-5 клеток
+        const veinTiles = new Set();
+        veinTiles.add(`${startX},${startY}`);
+        const directions = [
+            { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+        ];
+        
+        for (let i = 1; i < veinSize; i++) {
+            const currentTiles = Array.from(veinTiles).map(t => t.split(',').map(Number));
+            let foundNext = false;
+            
+            for (let tries = 0; tries < 50 && !foundNext; tries++) {
+                const [cx, cy] = currentTiles[Math.floor(Math.random() * currentTiles.length)];
+                const dir = directions[Math.floor(Math.random() * directions.length)];
+                const nx = cx + dir.dx;
+                const ny = cy + dir.dy;
+                
+                if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                    const tile = state.map.tiles[ny][nx];
+                    const key = `${nx},${ny}`;
+                    
+                    if (tile.type === TILE_TYPES.SOIL && !veinTiles.has(key)) {
+                        veinTiles.add(key);
+                        foundNext = true;
+                    }
+                }
+            }
+        }
+        
+        return Array.from(veinTiles).map(t => t.split(',').map(Number));
+    };
+    
+    // Ищем все места на почве для возможных жил руды
+    const soilPositions = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            if (state.map.tiles[y][x].type === TILE_TYPES.SOIL) {
+                soilPositions.push({ x, y });
+            }
+        }
+    }
+    
+    // Создаем 50 жил руды по всей карте
+    const usedPositions = new Set();
+    for (let i = 0; i < 50; i++) {
+        if (soilPositions.length === 0) break;
+        
+        const randomIndex = Math.floor(Math.random() * soilPositions.length);
+        const startPos = soilPositions[randomIndex];
+        const key = `${startPos.x},${startPos.y}`;
+        
+        if (!usedPositions.has(key)) {
+            const vein = generateOreVein(startPos.x, startPos.y);
+            vein.forEach(([x, y]) => {
+                state.map.tiles[y][x].type = TILE_TYPES.STONE;
+                usedPositions.add(`${x},${y}`);
+            });
+        }
+    }
+    
     state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 }
 
@@ -297,6 +370,40 @@ function updateChunk(chunk) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bgCanvas, 1, 1, size, size, 0, 0, size * ts, size * ts);
+    
+    // Отрисовка каменных клеток без сглаживания
+    ctx.imageSmoothingEnabled = false;
+    for (let ly = 0; ly < size; ly++) {
+        for (let lx = 0; lx < size; lx++) {
+            const gy = chunk.cy * size + ly;
+            const gx = chunk.cx * size + lx;
+            if (gy < state.map.height && gx < state.map.width) {
+                const tile = state.map.tiles[gy][gx];
+                if (tile.type === TILE_TYPES.STONE) {
+                    // Основной цвет камня
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Добавляем угловатую текстуру
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                    for (let py = 0; py < ts; py += 4) {
+                        for (let px = 0; px < ts; px += 4) {
+                            if ((px + py + gx + gy) % 3 === 0) {
+                                ctx.fillRect(lx * ts + px, ly * ts + py, 2, 2);
+                            }
+                        }
+                    }
+                    // Добавляем темные углы
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.fillRect(lx * ts, ly * ts, 3, 3);
+                    ctx.fillRect(lx * ts + ts - 3, ly * ts, 3, 3);
+                    ctx.fillRect(lx * ts, ly * ts + ts - 3, 3, 3);
+                    ctx.fillRect(lx * ts + ts - 3, ly * ts + ts - 3, 3, 3);
+                }
+            }
+        }
+    }
+    ctx.imageSmoothingEnabled = true;
 
     for (let ly = 0; ly < size; ly++) {
         for (let lx = 0; lx < size; lx++) {
@@ -325,20 +432,43 @@ function updateChunk(chunk) {
                         ctx.fillStyle = `rgba(${gray}, ${gray}, ${gray}, 0.6)`;
                         ctx.beginPath(); ctx.arc(lx * ts + ox, ly * ts + oy, s, 0, Math.PI * 2); ctx.fill();
                     }
-                } else if (tile.type === TILE_TYPES.STONE) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
-                    for (let i = 0; i < 3; i++) {
-                        const ox = (gx * 37 + i * 11) % (ts - 8) + 4;
-                        const oy = (gy * 41 + i * 13) % (ts - 8) + 4;
-                        ctx.beginPath(); ctx.moveTo(lx * ts + ox, ly * ts + oy); ctx.lineTo(lx * ts + ox + 4, ly * ts + oy + 2); ctx.stroke();
-                    }
                 } else if (tile.type === TILE_TYPES.WALL) {
                     ctx.fillStyle = tile.type.color;
                     ctx.fillRect(lx * ts, ly * ts, ts, ts);
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-                    ctx.strokeRect(lx * ts + 1, ly * ts + 1, ts - 2, ts - 2);
+                    
+                    // Проверяем соседей для отображения границ
+                    const hasTopWall = gy > 0 && state.map.tiles[gy - 1][gx].type === TILE_TYPES.WALL;
+                    const hasBottomWall = gy < state.map.height - 1 && state.map.tiles[gy + 1][gx].type === TILE_TYPES.WALL;
+                    const hasLeftWall = gx > 0 && state.map.tiles[gy][gx - 1].type === TILE_TYPES.WALL;
+                    const hasRightWall = gx < state.map.width - 1 && state.map.tiles[gy][gx + 1].type === TILE_TYPES.WALL;
+                    
                     ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-                    ctx.strokeRect(lx * ts, ly * ts, ts, ts);
+                    ctx.lineWidth = 2;
+                    
+                    if (!hasTopWall) {
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts, ly * ts);
+                        ctx.lineTo(lx * ts + ts, ly * ts);
+                        ctx.stroke();
+                    }
+                    if (!hasBottomWall) {
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts, ly * ts + ts);
+                        ctx.lineTo(lx * ts + ts, ly * ts + ts);
+                        ctx.stroke();
+                    }
+                    if (!hasLeftWall) {
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts, ly * ts);
+                        ctx.lineTo(lx * ts, ly * ts + ts);
+                        ctx.stroke();
+                    }
+                    if (!hasRightWall) {
+                        ctx.beginPath();
+                        ctx.moveTo(lx * ts + ts, ly * ts);
+                        ctx.lineTo(lx * ts + ts, ly * ts + ts);
+                        ctx.stroke();
+                    }
                 }
             }
         }
@@ -349,7 +479,17 @@ function updateChunk(chunk) {
 function markTileDirty(tx, ty) {
     const cx = Math.floor(tx / state.map.chunkSize);
     const cy = Math.floor(ty / state.map.chunkSize);
-    if (state.map.chunks[cy] && state.map.chunks[cy][cx]) state.map.chunks[cy][cx].dirty = true;
+    
+    // Помечаем текущий чанк и соседние, чтобы обновить границы стен
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            const ncx = cx + dx;
+            const ncy = cy + dy;
+            if (state.map.chunks[ncy] && state.map.chunks[ncy][ncx]) {
+                state.map.chunks[ncy][ncx].dirty = true;
+            }
+        }
+    }
 }
 
 function drawFogOfWar() {
@@ -496,13 +636,47 @@ function tryPlaceJob(mouseX, mouseY) {
     const tx = Math.floor(worldPos.x / state.map.tileSize);
     const ty = Math.floor(worldPos.y / state.map.tileSize);
     if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
-        const existingJob = state.jobs.find(j => j.x === tx && j.y === ty);
-        if (!existingJob) {
+        let jobType = null;
+        if (state.currentOrder === 'architect') jobType = 'build_wall';
+        else if (state.currentOrder === 'mine') jobType = 'mine';
+        else if (state.currentOrder === 'unarchitect') jobType = 'destruct';
+        
+        const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === jobType);
+        
+        if (existingJobIndex !== -1) {
+            // Remove job if it exists (toggle off)
+            const removedJob = state.jobs[existingJobIndex];
+            state.jobs.splice(existingJobIndex, 1);
+            state.entities.forEach(ent => {
+                if (ent.job === removedJob) {
+                    ent.job = null;
+                }
+            });
+            // Refund resources if we were building a wall
+            if (removedJob.type === 'build_wall') {
+                state.resources.stone += 12;
+                updateResourceUI();
+            }
+        } else {
+            // Create new job (toggle on)
             let job = null;
-            if (state.currentOrder === 'architect' && state.map.tiles[ty][tx].type !== TILE_TYPES.WALL) job = { type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false };
+            if (state.currentOrder === 'architect' && state.map.tiles[ty][tx].type !== TILE_TYPES.WALL) {
+                if (state.resources.stone >= 12) {
+                    state.resources.stone -= 12;
+                    updateResourceUI();
+                    job = { type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false };
+                }
+            }
             else if (state.currentOrder === 'mine' && state.map.tiles[ty][tx].type === TILE_TYPES.STONE) job = { type: 'mine', x: tx, y: ty, progress: 0, assigned: false };
             else if (state.currentOrder === 'unarchitect' && state.map.tiles[ty][tx].type === TILE_TYPES.WALL) job = { type: 'destruct', x: tx, y: ty, progress: 0, assigned: false };
-            if (job) { state.jobs.push(job); state.selectedEntities.forEach(ent => assignJobToEntity(ent, job)); }
+            if (job) { 
+                state.jobs.push(job); 
+                state.selectedEntities.forEach(ent => {
+                    if (!ent.job) {
+                        assignJobToEntity(ent, job);
+                    }
+                });
+            }
         }
     }
 }
@@ -518,7 +692,17 @@ window.addEventListener('mousedown', (e) => {
         return;
     }
     if (e.button === 0) {
-        if (state.currentOrder) {
+        if (state.currentOrder === 'mine') {
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            const tx = Math.floor(worldPos.x / state.map.tileSize);
+            const ty = Math.floor(worldPos.y / state.map.tileSize);
+            state.mineRadius.active = true;
+            state.mineRadius.startX = e.clientX;
+            state.mineRadius.startY = e.clientY;
+            state.mineRadius.centerTileX = tx;
+            state.mineRadius.centerTileY = ty;
+            state.mineRadius.radius = 0;
+        } else if (state.currentOrder) {
             state.isPainting = true;
             tryPlaceJob(e.clientX, e.clientY);
         } else {
@@ -543,7 +727,24 @@ window.addEventListener('mousedown', (e) => {
             const tx = Math.floor(worldPos.x / state.map.tileSize);
             const ty = Math.floor(worldPos.y / state.map.tileSize);
             if (isWalkable(tx, ty)) {
+                const now = Date.now();
                 state.selectedEntities.forEach(ent => {
+                    if (!ent.lastRightClickTimes) ent.lastRightClickTimes = [];
+                    ent.lastRightClickTimes.push(now);
+                    ent.lastRightClickTimes = ent.lastRightClickTimes.filter(t => now - t < 1000);
+                    
+                    if (ent.lastRightClickTimes.length >= 5) {
+                        state.popups.push({
+                            entityId: ent.id,
+                            message: 'Да ты зае...',
+                            x: ent.x,
+                            y: ent.y,
+                            createdAt: now,
+                            duration: 2000
+                        });
+                        ent.lastRightClickTimes = [];
+                    }
+                    
                     if (isPathClearOfWater(ent.x, ent.y, tx, ty)) {
                         ent.path = [{ x: tx + 0.5, y: ty + 0.5 }]; ent.target = ent.path[0]; ent.job = null; ent.isManualMove = true;
                     } else {
@@ -659,6 +860,7 @@ window.addEventListener('keydown', (e) => {
     else if (e.code === 'KeyZ') setOrder('architect');
     else if (e.code === 'KeyX') setOrder('unarchitect');
     else if (e.code === 'KeyC') setOrder('chop');
+    else if (e.code === 'KeyV') setOrder('mine');
     else if (e.code === 'KeyT') selectAllEntities();
 });
 
@@ -703,6 +905,69 @@ function toggleUI() { document.getElementById('ui-overlay').classList.toggle('ui
 
 function toggleFogOfWar() {
     state.map.fogOfWarEnabled = !state.map.fogOfWarEnabled;
+    // Генерация жил каменной руды
+    const generateOreVein = (startX, startY) => {
+        const veinSize = Math.floor(Math.random() * 4) + 2; // 2-5 клеток
+        const veinTiles = new Set();
+        veinTiles.add(`${startX},${startY}`);
+        const directions = [
+            { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
+        ];
+        
+        for (let i = 1; i < veinSize; i++) {
+            const currentTiles = Array.from(veinTiles).map(t => t.split(',').map(Number));
+            let foundNext = false;
+            
+            for (let tries = 0; tries < 50 && !foundNext; tries++) {
+                const [cx, cy] = currentTiles[Math.floor(Math.random() * currentTiles.length)];
+                const dir = directions[Math.floor(Math.random() * directions.length)];
+                const nx = cx + dir.dx;
+                const ny = cy + dir.dy;
+                
+                if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                    const tile = state.map.tiles[ny][nx];
+                    const key = `${nx},${ny}`;
+                    
+                    if (tile.type === TILE_TYPES.SOIL && !veinTiles.has(key)) {
+                        veinTiles.add(key);
+                        foundNext = true;
+                    }
+                }
+            }
+        }
+        
+        return Array.from(veinTiles).map(t => t.split(',').map(Number));
+    };
+    
+    // Ищем все места на почве для возможных жил руды
+    const soilPositions = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            if (state.map.tiles[y][x].type === TILE_TYPES.SOIL) {
+                soilPositions.push({ x, y });
+            }
+        }
+    }
+    
+    // Создаем 50 жил руды по всей карте
+    const usedPositions = new Set();
+    for (let i = 0; i < 50; i++) {
+        if (soilPositions.length === 0) break;
+        
+        const randomIndex = Math.floor(Math.random() * soilPositions.length);
+        const startPos = soilPositions[randomIndex];
+        const key = `${startPos.x},${startPos.y}`;
+        
+        if (!usedPositions.has(key)) {
+            const vein = generateOreVein(startPos.x, startPos.y);
+            vein.forEach(([x, y]) => {
+                state.map.tiles[y][x].type = TILE_TYPES.STONE;
+                usedPositions.add(`${x},${y}`);
+            });
+        }
+    }
+    
     state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 }
 
@@ -712,6 +977,15 @@ window.addEventListener('mousemove', (e) => {
         state.camera.y += (e.clientY - state.camera.lastMouseY) / state.camera.zoom;
     }
     if (state.selectionBox.active) { state.selectionBox.endX = e.clientX; state.selectionBox.endY = e.clientY; }
+    if (state.mineRadius.active) {
+        const centerScreen = worldToScreen(
+            state.mineRadius.centerTileX * state.map.tileSize + state.map.tileSize / 2,
+            state.mineRadius.centerTileY * state.map.tileSize + state.map.tileSize / 2
+        );
+        const dx = e.clientX - centerScreen.x;
+        const dy = e.clientY - centerScreen.y;
+        state.mineRadius.radius = Math.sqrt(dx * dx + dy * dy) / state.camera.zoom / state.map.tileSize;
+    }
     if (state.isPainting) { tryPlaceJob(e.clientX, e.clientY); }
     state.camera.lastMouseX = e.clientX; state.camera.lastMouseY = e.clientY;
 });
@@ -721,6 +995,76 @@ window.addEventListener('mouseup', (e) => {
         state.selectionBox.endX = e.clientX; state.selectionBox.endY = e.clientY;
         if (Math.abs(state.selectionBox.endX - state.selectionBox.startX) > 5 || Math.abs(state.selectionBox.endY - state.selectionBox.startY) > 5) selectEntitiesInBox();
         state.selectionBox.active = false;
+    }
+    if (state.mineRadius.active && e.button === 0) {
+        const centerX = state.mineRadius.centerTileX;
+        const centerY = state.mineRadius.centerTileY;
+        const radius = state.mineRadius.radius;
+        
+        if (radius < 0.5) {
+            // Treat as a single click, toggle mine job on center tile
+            const tile = state.map.tiles[centerY][centerX];
+            if (tile.type === TILE_TYPES.STONE) {
+                const existingJobIndex = state.jobs.findIndex(j => j.x === centerX && j.y === centerY && j.type === 'mine');
+                if (existingJobIndex !== -1) {
+                    // Remove job if it exists
+                    const removedJob = state.jobs[existingJobIndex];
+                    state.jobs.splice(existingJobIndex, 1);
+                    state.entities.forEach(ent => {
+                        if (ent.job === removedJob) {
+                            ent.job = null;
+                        }
+                    });
+                } else {
+                    // Add job with progress and assigned properties
+                    const newJob = { type: 'mine', x: centerX, y: centerY, progress: 0, assigned: false };
+                    state.jobs.push(newJob);
+                    state.selectedEntities.forEach(ent => {
+                        if (!ent.job) {
+                            assignJobToEntity(ent, newJob);
+                        }
+                    });
+                }
+            }
+        } else {
+            // Create or remove mine jobs for all stones in the radius
+            for (let y = 0; y < state.map.height; y++) {
+                for (let x = 0; x < state.map.width; x++) {
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist <= radius) {
+                        const tile = state.map.tiles[y][x];
+                        if (tile.type === TILE_TYPES.STONE) {
+                            const existingJobIndex = state.jobs.findIndex(j => j.x === x && j.y === y && j.type === 'mine');
+                            if (existingJobIndex !== -1) {
+                                // Remove job if it exists
+                                const removedJob = state.jobs[existingJobIndex];
+                                state.jobs.splice(existingJobIndex, 1);
+                                // Also remove it from any entities that are assigned to it
+                                state.entities.forEach(ent => {
+                                    if (ent.job === removedJob) {
+                                        ent.job = null;
+                                    }
+                                });
+                            } else {
+                                // Add job with progress and assigned properties
+                                const newJob = { type: 'mine', x, y, progress: 0, assigned: false };
+                                state.jobs.push(newJob);
+                                // Assign to selected entities if any
+                                state.selectedEntities.forEach(ent => {
+                                    if (!ent.job) {
+                                        assignJobToEntity(ent, newJob);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        state.mineRadius.active = false;
     }
     state.isPainting = false;
     state.camera.isDragging = false;
@@ -762,6 +1106,10 @@ function update() {
     } else {
         if (regenProgress) regenProgress.style.width = '0%';
     }
+    
+    // Clean up old popups
+    const now = Date.now();
+    state.popups = state.popups.filter(popup => now - popup.createdAt < popup.duration);
 
     state.time.tick++;
     if (state.time.tick % 60 === 0) {
@@ -784,7 +1132,7 @@ function update() {
             ent.needs.food = Math.min(100, ent.needs.food + 0.5);
             if (ent.needs.food >= 100) ent.status = null;
         }
-        if (ent.status === 'sleeping' || ent.status === 'eating') {
+        if (ent.status === 'sleeping' || ent.status === 'eating' || state.isWorkPaused) {
             if (state.selectedEntities.includes(ent)) updateInspectPanel(ent);
             return;
         }
@@ -824,8 +1172,16 @@ function update() {
                 if (ent.job.progress >= 100) {
                     const job = ent.job; const tx = job.x; const ty = job.y;
                     if (job.type === 'build_wall') state.map.tiles[ty][tx].type = TILE_TYPES.WALL;
-                    else if (job.type === 'mine') { state.map.tiles[ty][tx].type = TILE_TYPES.GRASS; state.resources.stone += 20; updateResourceUI(); }
-                    else if (job.type === 'destruct') state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
+                    else if (job.type === 'mine') { 
+                        state.map.tiles[ty][tx].type = TILE_TYPES.SOIL; 
+                        state.resources.stone += 10; 
+                        updateResourceUI(); 
+                    }
+                    else if (job.type === 'destruct') {
+                        state.map.tiles[ty][tx].type = TILE_TYPES.SOIL;
+                        state.resources.stone += 6; // возвращаем половину стоимости
+                        updateResourceUI();
+                    }
                     state.map.chunks[Math.floor(ty / state.map.chunkSize)][Math.floor(tx / state.map.chunkSize)].dirty = true;
                     state.jobs = state.jobs.filter(j => j !== job); ent.job = null;
                 }
@@ -868,41 +1224,43 @@ function render() {
             ctx.drawImage(chunk.canvas, cx * chunkSizePx, cy * chunkSizePx);
         }
     }
-    if (state.camera.zoom > 0.5) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-        ctx.lineWidth = 1 / state.camera.zoom;
-        ctx.beginPath();
-        const startTX = Math.floor(worldViewLeft / state.map.tileSize);
-        const endTX = Math.ceil((worldViewLeft + viewW) / state.map.tileSize);
-        const startTY = Math.floor(worldViewTop / state.map.tileSize);
-        const endTY = Math.ceil((worldViewTop + viewH) / state.map.tileSize);
-        for (let x = Math.max(0, startTX); x <= Math.min(state.map.width, endTX); x++) {
-            ctx.moveTo(x * state.map.tileSize, Math.max(0, startTY) * state.map.tileSize);
-            ctx.lineTo(x * state.map.tileSize, Math.min(state.map.height, endTY) * state.map.tileSize);
-        }
-        for (let y = Math.max(0, startTY); y <= Math.min(state.map.height, endTY); y++) {
-            ctx.moveTo(Math.max(0, startTX) * state.map.tileSize, y * state.map.tileSize);
-            ctx.lineTo(Math.min(state.map.width, endTX) * state.map.tileSize, y * state.map.tileSize);
-        }
-        ctx.stroke();
-    }
-    if (state.currentOrder === 'architect' || state.currentOrder === 'unarchitect') {
+    if (state.currentOrder === 'architect' || state.currentOrder === 'unarchitect' || state.currentOrder === 'mine') {
         const mouseWorld = screenToWorld(state.camera.lastMouseX, state.camera.lastMouseY);
         const tx = Math.floor(mouseWorld.x / state.map.tileSize);
         const ty = Math.floor(mouseWorld.y / state.map.tileSize);
         if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
-            ctx.fillStyle = state.currentOrder === 'architect' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)';
+            if (state.currentOrder === 'architect') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            } else if (state.currentOrder === 'mine') {
+                ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
+            } else {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            }
             ctx.fillRect(tx * state.map.tileSize, ty * state.map.tileSize, state.map.tileSize, state.map.tileSize);
         }
     }
     drawFogOfWar();
     state.jobs.forEach(job => {
-        ctx.setLineDash(job.type === 'build_wall' ? [5, 5] : [2, 2]);
-        ctx.strokeStyle = job.type === 'build_wall' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 0, 0, 0.5)';
+        if (job.type === 'build_wall') {
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        } else if (job.type === 'mine') {
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+        } else {
+            ctx.setLineDash([2, 2]);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        }
         ctx.strokeRect(job.x * state.map.tileSize + 2, job.y * state.map.tileSize + 2, state.map.tileSize - 4, state.map.tileSize - 4);
         ctx.setLineDash([]);
         if (job.progress > 0) {
-            ctx.fillStyle = job.type === 'build_wall' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)';
+            if (job.type === 'build_wall') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            } else if (job.type === 'mine') {
+                ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
+            } else {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            }
             const h = (state.map.tileSize - 4) * (job.progress / 100);
             ctx.fillRect(job.x * state.map.tileSize + 2, job.y * state.map.tileSize + state.map.tileSize - 2 - h, state.map.tileSize - 4, h);
         }
@@ -957,6 +1315,44 @@ function render() {
         ctx.fillRect(minX, minY, width, height);
         ctx.setLineDash([]);
     }
+    if (state.mineRadius.active) {
+        const centerScreen = worldToScreen(
+            state.mineRadius.centerTileX * state.map.tileSize + state.map.tileSize / 2,
+            state.mineRadius.centerTileY * state.map.tileSize + state.map.tileSize / 2
+        );
+        const radiusPixels = state.mineRadius.radius * state.map.tileSize * state.camera.zoom;
+        
+        ctx.strokeStyle = '#ff9800';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(centerScreen.x, centerScreen.y, radiusPixels, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
+        ctx.fill();
+        
+        ctx.setLineDash([]);
+    }
+    
+    // Draw popups
+    state.popups.forEach(popup => {
+        const screenPos = worldToScreen(popup.x * state.map.tileSize, popup.y * state.map.tileSize);
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const textWidth = ctx.measureText(popup.message).width + 20;
+        const textHeight = 30;
+        const boxX = screenPos.x - textWidth / 2;
+        const boxY = screenPos.y - 50;
+        
+        ctx.fillRect(boxX, boxY, textWidth, textHeight);
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(popup.message, screenPos.x, boxY + 20);
+    });
+    
     update();
     requestAnimationFrame(render);
 }
@@ -985,6 +1381,15 @@ window.regenerateWorld = function() {
     updateCharacterMenu();
 };
 window.setOrder = function(type) {
+    if (type === 'work') {
+        state.isWorkPaused = !state.isWorkPaused;
+        const buttons = document.querySelectorAll('#bottom-menu button');
+        buttons.forEach(btn => {
+            if (btn.innerText === 'Work') btn.style.background = state.isWorkPaused ? '#8B0000' : '#333';
+        });
+        return;
+    }
+    
     if (state.currentOrder === type) state.currentOrder = null;
     else state.currentOrder = type;
     const orderNames = { 'architect': 'Architect', 'unarchitect': 'Destruct', 'chop': 'Chop', 'mine': 'Mine', 'work': 'Work' };
@@ -995,4 +1400,7 @@ window.setOrder = function(type) {
     });
 };
 window.addEventListener('resize', resize);
-resize(); initMap(); initEntities(); updateResourceUI(); requestAnimationFrame(render);
+resize(); initMap(); initEntities(); updateResourceUI(); 
+// Обновляем все чанки для новых текстур камня
+state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
+requestAnimationFrame(render);
