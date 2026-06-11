@@ -47,13 +47,12 @@ const state = {
         endX: 0,
         endY: 0
     },
-    mineRadius: {
+    mineSelection: {
         active: false,
         startX: 0,
         startY: 0,
-        centerTileX: 0,
-        centerTileY: 0,
-        radius: 0
+        endX: 0,
+        endY: 0
     },
     popups: [],
     isWorkPaused: false,
@@ -693,15 +692,11 @@ window.addEventListener('mousedown', (e) => {
     }
     if (e.button === 0) {
         if (state.currentOrder === 'mine') {
-            const worldPos = screenToWorld(e.clientX, e.clientY);
-            const tx = Math.floor(worldPos.x / state.map.tileSize);
-            const ty = Math.floor(worldPos.y / state.map.tileSize);
-            state.mineRadius.active = true;
-            state.mineRadius.startX = e.clientX;
-            state.mineRadius.startY = e.clientY;
-            state.mineRadius.centerTileX = tx;
-            state.mineRadius.centerTileY = ty;
-            state.mineRadius.radius = 0;
+            state.mineSelection.active = true;
+            state.mineSelection.startX = e.clientX;
+            state.mineSelection.startY = e.clientY;
+            state.mineSelection.endX = e.clientX;
+            state.mineSelection.endY = e.clientY;
         } else if (state.currentOrder) {
             state.isPainting = true;
             tryPlaceJob(e.clientX, e.clientY);
@@ -977,14 +972,9 @@ window.addEventListener('mousemove', (e) => {
         state.camera.y += (e.clientY - state.camera.lastMouseY) / state.camera.zoom;
     }
     if (state.selectionBox.active) { state.selectionBox.endX = e.clientX; state.selectionBox.endY = e.clientY; }
-    if (state.mineRadius.active) {
-        const centerScreen = worldToScreen(
-            state.mineRadius.centerTileX * state.map.tileSize + state.map.tileSize / 2,
-            state.mineRadius.centerTileY * state.map.tileSize + state.map.tileSize / 2
-        );
-        const dx = e.clientX - centerScreen.x;
-        const dy = e.clientY - centerScreen.y;
-        state.mineRadius.radius = Math.sqrt(dx * dx + dy * dy) / state.camera.zoom / state.map.tileSize;
+    if (state.mineSelection.active) {
+        state.mineSelection.endX = e.clientX;
+        state.mineSelection.endY = e.clientY;
     }
     if (state.isPainting) { tryPlaceJob(e.clientX, e.clientY); }
     state.camera.lastMouseX = e.clientX; state.camera.lastMouseY = e.clientY;
@@ -996,75 +986,51 @@ window.addEventListener('mouseup', (e) => {
         if (Math.abs(state.selectionBox.endX - state.selectionBox.startX) > 5 || Math.abs(state.selectionBox.endY - state.selectionBox.startY) > 5) selectEntitiesInBox();
         state.selectionBox.active = false;
     }
-    if (state.mineRadius.active && e.button === 0) {
-        const centerX = state.mineRadius.centerTileX;
-        const centerY = state.mineRadius.centerTileY;
-        const radius = state.mineRadius.radius;
-        
-        if (radius < 0.5) {
-            // Treat as a single click, toggle mine job on center tile
-            const tile = state.map.tiles[centerY][centerX];
-            if (tile.type === TILE_TYPES.STONE) {
-                const existingJobIndex = state.jobs.findIndex(j => j.x === centerX && j.y === centerY && j.type === 'mine');
-                if (existingJobIndex !== -1) {
-                    // Remove job if it exists
-                    const removedJob = state.jobs[existingJobIndex];
-                    state.jobs.splice(existingJobIndex, 1);
-                    state.entities.forEach(ent => {
-                        if (ent.job === removedJob) {
-                            ent.job = null;
-                        }
-                    });
-                } else {
-                    // Add job with progress and assigned properties
-                    const newJob = { type: 'mine', x: centerX, y: centerY, progress: 0, assigned: false };
-                    state.jobs.push(newJob);
-                    state.selectedEntities.forEach(ent => {
-                        if (!ent.job) {
-                            assignJobToEntity(ent, newJob);
-                        }
-                    });
-                }
-            }
-        } else {
-            // Create or remove mine jobs for all stones in the radius
-            for (let y = 0; y < state.map.height; y++) {
-                for (let x = 0; x < state.map.width; x++) {
-                    const dx = x - centerX;
-                    const dy = y - centerY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist <= radius) {
-                        const tile = state.map.tiles[y][x];
-                        if (tile.type === TILE_TYPES.STONE) {
-                            const existingJobIndex = state.jobs.findIndex(j => j.x === x && j.y === y && j.type === 'mine');
-                            if (existingJobIndex !== -1) {
-                                // Remove job if it exists
-                                const removedJob = state.jobs[existingJobIndex];
-                                state.jobs.splice(existingJobIndex, 1);
-                                // Also remove it from any entities that are assigned to it
-                                state.entities.forEach(ent => {
-                                    if (ent.job === removedJob) {
-                                        ent.job = null;
-                                    }
-                                });
-                            } else {
-                                // Add job with progress and assigned properties
-                                const newJob = { type: 'mine', x, y, progress: 0, assigned: false };
-                                state.jobs.push(newJob);
-                                // Assign to selected entities if any
-                                state.selectedEntities.forEach(ent => {
-                                    if (!ent.job) {
-                                        assignJobToEntity(ent, newJob);
-                                    }
-                                });
+    if (state.mineSelection.active && e.button === 0) {
+        state.mineSelection.endX = e.clientX;
+        state.mineSelection.endY = e.clientY;
+
+        const startWorld = screenToWorld(state.mineSelection.startX, state.mineSelection.startY);
+        const endWorld = screenToWorld(state.mineSelection.endX, state.mineSelection.endY);
+
+        const minTX = Math.floor(Math.min(startWorld.x, endWorld.x) / state.map.tileSize);
+        const maxTX = Math.floor(Math.max(startWorld.x, endWorld.x) / state.map.tileSize);
+        const minTY = Math.floor(Math.min(startWorld.y, endWorld.y) / state.map.tileSize);
+        const maxTY = Math.floor(Math.max(startWorld.y, endWorld.y) / state.map.tileSize);
+
+        // Check if it's a small selection (single click)
+        const isSingleClick = Math.abs(state.mineSelection.endX - state.mineSelection.startX) < 5 && 
+                             Math.abs(state.mineSelection.endY - state.mineSelection.startY) < 5;
+
+        for (let ty = Math.max(0, minTY); ty <= Math.min(state.map.height - 1, maxTY); ty++) {
+            for (let tx = Math.max(0, minTX); tx <= Math.min(state.map.width - 1, maxTX); tx++) {
+                const tile = state.map.tiles[ty][tx];
+                if (tile.type === TILE_TYPES.STONE) {
+                    const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === 'mine');
+                    if (existingJobIndex !== -1) {
+                        // Remove job if it exists
+                        const removedJob = state.jobs[existingJobIndex];
+                        state.jobs.splice(existingJobIndex, 1);
+                        state.entities.forEach(ent => {
+                            if (ent.job === removedJob) {
+                                ent.job = null;
                             }
-                        }
+                        });
+                    } else {
+                        // Add job
+                        const newJob = { type: 'mine', x: tx, y: ty, progress: 0, assigned: false };
+                        state.jobs.push(newJob);
+                        state.selectedEntities.forEach(ent => {
+                            if (!ent.job) {
+                                assignJobToEntity(ent, newJob);
+                            }
+                        });
                     }
                 }
             }
         }
         
-        state.mineRadius.active = false;
+        state.mineSelection.active = false;
     }
     state.isPainting = false;
     state.camera.isDragging = false;
@@ -1315,22 +1281,19 @@ function render() {
         ctx.fillRect(minX, minY, width, height);
         ctx.setLineDash([]);
     }
-    if (state.mineRadius.active) {
-        const centerScreen = worldToScreen(
-            state.mineRadius.centerTileX * state.map.tileSize + state.map.tileSize / 2,
-            state.mineRadius.centerTileY * state.map.tileSize + state.map.tileSize / 2
-        );
-        const radiusPixels = state.mineRadius.radius * state.map.tileSize * state.camera.zoom;
+    if (state.mineSelection.active) {
+        const minX = Math.min(state.mineSelection.startX, state.mineSelection.endX);
+        const minY = Math.min(state.mineSelection.startY, state.mineSelection.endY);
+        const width = Math.abs(state.mineSelection.endX - state.mineSelection.startX);
+        const height = Math.abs(state.mineSelection.endY - state.mineSelection.startY);
         
         ctx.strokeStyle = '#ff9800';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.arc(centerScreen.x, centerScreen.y, radiusPixels, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.strokeRect(minX, minY, width, height);
         
         ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
-        ctx.fill();
+        ctx.fillRect(minX, minY, width, height);
         
         ctx.setLineDash([]);
     }
