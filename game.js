@@ -299,9 +299,8 @@ function initMap() {
         }
         state.map.chunks.push(row);
     }
-    // Генерация жил каменной руды
     const generateOreVein = (startX, startY) => {
-        const veinSize = Math.floor(Math.random() * 4) + 2; // 2-5 клеток
+        const veinSize = Math.floor(Math.random() * 4) + 2; 
         const veinTiles = new Set();
         veinTiles.add(`${startX},${startY}`);
         const directions = [
@@ -334,7 +333,6 @@ function initMap() {
         return Array.from(veinTiles).map(t => t.split(',').map(Number));
     };
     
-    // Ищем все места на почве для возможных жил руды
     const soilPositions = [];
     for (let y = 0; y < state.map.height; y++) {
         for (let x = 0; x < state.map.width; x++) {
@@ -344,7 +342,6 @@ function initMap() {
         }
     }
     
-    // Создаем 50 жил руды по всей карте
     const usedPositions = new Set();
     for (let i = 0; i < 50; i++) {
         if (soilPositions.length === 0) break;
@@ -432,7 +429,6 @@ function updateChunk(chunk) {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bgCanvas, 1, 1, size, size, 0, 0, size * ts, size * ts);
     
-    // Отрисовка каменных клеток без сглаживания
     ctx.imageSmoothingEnabled = false;
     for (let ly = 0; ly < size; ly++) {
         for (let lx = 0; lx < size; lx++) {
@@ -441,11 +437,9 @@ function updateChunk(chunk) {
             if (gy < state.map.height && gx < state.map.width) {
                 const tile = state.map.tiles[gy][gx];
                 if (tile.type === TILE_TYPES.STONE) {
-                    // Основной цвет камня
                     ctx.fillStyle = tile.type.color;
                     ctx.fillRect(lx * ts, ly * ts, ts, ts);
                     
-                    // Добавляем угловатую текстуру
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
                     for (let py = 0; py < ts; py += 4) {
                         for (let px = 0; px < ts; px += 4) {
@@ -454,7 +448,6 @@ function updateChunk(chunk) {
                             }
                         }
                     }
-                    // Добавляем темные углы
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
                     ctx.fillRect(lx * ts, ly * ts, 3, 3);
                     ctx.fillRect(lx * ts + ts - 3, ly * ts, 3, 3);
@@ -497,7 +490,6 @@ function updateChunk(chunk) {
                     ctx.fillStyle = tile.type.color;
                     ctx.fillRect(lx * ts, ly * ts, ts, ts);
                     
-                    // Проверяем соседей для отображения границ
                     const hasTopWall = gy > 0 && state.map.tiles[gy - 1][gx].type === TILE_TYPES.WALL;
                     const hasBottomWall = gy < state.map.height - 1 && state.map.tiles[gy + 1][gx].type === TILE_TYPES.WALL;
                     const hasLeftWall = gx > 0 && state.map.tiles[gy][gx - 1].type === TILE_TYPES.WALL;
@@ -541,7 +533,6 @@ function markTileDirty(tx, ty) {
     const cx = Math.floor(tx / state.map.chunkSize);
     const cy = Math.floor(ty / state.map.chunkSize);
     
-    // Помечаем текущий чанк и соседние, чтобы обновить границы стен
     for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
             const ncx = cx + dx;
@@ -705,7 +696,6 @@ function tryPlaceJob(mouseX, mouseY) {
         const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === jobType);
         
         if (existingJobIndex !== -1) {
-            // Remove job if it exists (toggle off)
             const removedJob = state.jobs[existingJobIndex];
             state.jobs.splice(existingJobIndex, 1);
             state.entities.forEach(ent => {
@@ -713,13 +703,11 @@ function tryPlaceJob(mouseX, mouseY) {
                     ent.job = null;
                 }
             });
-            // Refund resources if we were building a wall
             if (removedJob.type === 'build_wall') {
                 state.resources.stone += 12;
                 updateResourceUI();
             }
         } else {
-            // Create new job (toggle on)
             let job = null;
             if (state.currentOrder === 'architect' && state.map.tiles[ty][tx].type !== TILE_TYPES.WALL) {
                 if (state.resources.stone >= 12) {
@@ -962,9 +950,8 @@ function toggleUI() { document.getElementById('ui-overlay').classList.toggle('ui
 
 function toggleFogOfWar() {
     state.map.fogOfWarEnabled = !state.map.fogOfWarEnabled;
-    // Генерация жил каменной руды
     const generateOreVein = (startX, startY) => {
-        const veinSize = Math.floor(Math.random() * 4) + 2; // 2-5 клеток
+        const veinSize = Math.floor(Math.random() * 4) + 2; 
         const veinTiles = new Set();
         veinTiles.add(`${startX},${startY}`);
         const directions = [
@@ -997,7 +984,6 @@ function toggleFogOfWar() {
         return Array.from(veinTiles).map(t => t.split(',').map(Number));
     };
     
-    // Ищем все места на почве для возможных жил руды
     const soilPositions = [];
     for (let y = 0; y < state.map.height; y++) {
         for (let x = 0; x < state.map.width; x++) {
@@ -1007,7 +993,6 @@ function toggleFogOfWar() {
         }
     }
     
-    // Создаем 50 жил руды по всей карте
     const usedPositions = new Set();
     for (let i = 0; i < 50; i++) {
         if (soilPositions.length === 0) break;
@@ -1060,7 +1045,6 @@ window.addEventListener('mouseup', (e) => {
         const minTY = Math.floor(Math.min(startWorld.y, endWorld.y) / state.map.tileSize);
         const maxTY = Math.floor(Math.max(startWorld.y, endWorld.y) / state.map.tileSize);
 
-        // Check if it's a small selection (single click)
         const isSingleClick = Math.abs(state.mineSelection.endX - state.mineSelection.startX) < 5 && 
                              Math.abs(state.mineSelection.endY - state.mineSelection.startY) < 5;
 
@@ -1070,7 +1054,6 @@ window.addEventListener('mouseup', (e) => {
                 if (tile.type === TILE_TYPES.STONE) {
                     const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === 'mine');
                     if (existingJobIndex !== -1) {
-                        // Remove job if it exists
                         const removedJob = state.jobs[existingJobIndex];
                         state.jobs.splice(existingJobIndex, 1);
                         state.entities.forEach(ent => {
@@ -1079,7 +1062,6 @@ window.addEventListener('mouseup', (e) => {
                             }
                         });
                     } else {
-                        // Add job
                         const newJob = { type: 'mine', x: tx, y: ty, progress: 0, assigned: false };
                         state.jobs.push(newJob);
                         state.selectedEntities.forEach(ent => {
@@ -1135,7 +1117,6 @@ function update() {
         if (regenProgress) regenProgress.style.width = '0%';
     }
     
-    // Clean up old popups
     const now = Date.now();
     state.popups = state.popups.filter(popup => now - popup.createdAt < popup.duration);
 
@@ -1149,7 +1130,6 @@ function update() {
         updateTimeUI();
     }
     state.entities.forEach(ent => {
-        // Рандомные мысли
         if (Math.random() < 0.0005) {
             addCharacterThought(ent);
         }
@@ -1212,7 +1192,7 @@ function update() {
                     }
                     else if (job.type === 'destruct') {
                         state.map.tiles[ty][tx].type = TILE_TYPES.SOIL;
-                        state.resources.stone += 6; // возвращаем половину стоимости
+                        state.resources.stone += 6; 
                         updateResourceUI();
                     }
                     state.map.chunks[Math.floor(ty / state.map.chunkSize)][Math.floor(tx / state.map.chunkSize)].dirty = true;
@@ -1220,10 +1200,8 @@ function update() {
                 }
             } else if (!ent.target) assignJobToEntity(ent, ent.job);
         } else if (Math.random() < 0.005) {
-            // Более умное блуждание
             let tx, ty;
             if (Math.random() < 0.7) {
-                // Ищем интересную точку неподалеку (не воду и не стену)
                 for (let attempt = 0; attempt < 10; attempt++) {
                     const rx = Math.floor(ent.x + (Math.random() * 20 - 10));
                     const ry = Math.floor(ent.y + (Math.random() * 20 - 10));
@@ -1233,7 +1211,6 @@ function update() {
                     }
                 }
             } else {
-                // Идем к ближайшему сородичу, чтобы "пообщаться"
                 const other = state.entities.find(e => e !== ent && Math.sqrt(Math.pow(e.x - ent.x, 2) + Math.pow(e.y - ent.y, 2)) < 30);
                 if (other) {
                     tx = Math.floor(other.x); ty = Math.floor(other.y);
@@ -1389,7 +1366,6 @@ function render() {
         ctx.setLineDash([]);
     }
     
-    // Draw popups
     state.popups.forEach(popup => {
         const screenPos = worldToScreen(popup.x * state.map.tileSize, popup.y * state.map.tileSize);
         
@@ -1455,6 +1431,5 @@ window.setOrder = function(type) {
 };
 window.addEventListener('resize', resize);
 resize(); initMap(); initEntities(); updateResourceUI(); 
-// Обновляем все чанки для новых текстур камня
 state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 requestAnimationFrame(render);
