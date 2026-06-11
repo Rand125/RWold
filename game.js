@@ -60,6 +60,68 @@ const state = {
     keyPressTime: {}
 };
 
+const CHARACTER_THOUGHTS = {
+    idle: [
+        "Хорошая погода сегодня.",
+        "Интересно, что там за горизонтом?",
+        "Надо бы чем-нибудь заняться...",
+        "Опять я просто стою и смотрю в никуда.",
+        "Жизнь — странная штука.",
+        "Хм, а этот камень всегда здесь лежал?",
+        "Скучновато как-то."
+    ],
+    working: [
+        "Труд облагораживает.",
+        "Работа, работа, перейди на Федота...",
+        "Еще немного, и будет готово.",
+        "Кирка тяжеловата сегодня.",
+        "Строительство — это искусство.",
+        "Главное — не перетрудиться.",
+        "Опять работа!"
+    ],
+    hungry: [
+        "Живот урчит...",
+        "Когда уже обед?",
+        "Я бы сейчас съел целого кабана.",
+        "Еда... мне нужна еда.",
+        "Сил совсем нет от голода."
+    ],
+    tired: [
+        "Глаза слипаются.",
+        "Поспать бы часиков десять.",
+        "Устал я что-то.",
+        "Ноги едва держат.",
+        "Скоро я усну прямо на ходу."
+    ],
+    moving: [
+        "Иду куда глаза глядят.",
+        "Движение — это жизнь.",
+        "Надо проверить, что там.",
+        "Прогулка на свежем воздухе полезна."
+    ]
+};
+
+function addCharacterThought(ent) {
+    let category = 'idle';
+    if (ent.job) category = 'working';
+    else if (ent.target) category = 'moving';
+    
+    if (ent.needs.food < 30) category = 'hungry';
+    else if (ent.needs.rest < 30) category = 'tired';
+
+    const phrases = CHARACTER_THOUGHTS[category];
+    const message = phrases[Math.floor(Math.random() * phrases.length)];
+
+    state.popups.push({
+        entityId: ent.id,
+        message: message,
+        x: ent.x,
+        y: ent.y,
+        createdAt: Date.now(),
+        duration: 3000
+    });
+}
+
 const TILE_TYPES = {
     GRASS: { color: 'rgb(95, 94, 40)', name: 'Grass', moveCost: 1 },
     LIGHT_GRASS: { color: 'rgb(125, 124, 60)', name: 'Light Grass', moveCost: 1 },
@@ -1087,6 +1149,11 @@ function update() {
         updateTimeUI();
     }
     state.entities.forEach(ent => {
+        // Рандомные мысли
+        if (Math.random() < 0.0005) {
+            addCharacterThought(ent);
+        }
+
         if (ent.status !== 'sleeping') {
             ent.needs.food = Math.max(0, ent.needs.food - 0.002);
             ent.needs.rest = Math.max(0, ent.needs.rest - 0.0015);
@@ -1152,11 +1219,35 @@ function update() {
                     state.jobs = state.jobs.filter(j => j !== job); ent.job = null;
                 }
             } else if (!ent.target) assignJobToEntity(ent, ent.job);
-        } else if (Math.random() < 0.01) {
-            const tx = Math.floor(ent.x + (Math.random() * 10 - 5)); const ty = Math.floor(ent.y + (Math.random() * 10 - 5));
-            if (isWalkable(tx, ty)) {
-                if (isPathClearOfWater(ent.x, ent.y, tx, ty)) { ent.path = [{ x: tx + 0.5, y: ty + 0.5 }]; ent.target = ent.path[0]; }
-                else { const path = findPath(ent.x, ent.y, tx, ty); if (path) { ent.path = path; ent.target = path[0]; } }
+        } else if (Math.random() < 0.005) {
+            // Более умное блуждание
+            let tx, ty;
+            if (Math.random() < 0.7) {
+                // Ищем интересную точку неподалеку (не воду и не стену)
+                for (let attempt = 0; attempt < 10; attempt++) {
+                    const rx = Math.floor(ent.x + (Math.random() * 20 - 10));
+                    const ry = Math.floor(ent.y + (Math.random() * 20 - 10));
+                    if (isWalkable(rx, ry)) {
+                        tx = rx; ty = ry;
+                        break;
+                    }
+                }
+            } else {
+                // Идем к ближайшему сородичу, чтобы "пообщаться"
+                const other = state.entities.find(e => e !== ent && Math.sqrt(Math.pow(e.x - ent.x, 2) + Math.pow(e.y - ent.y, 2)) < 30);
+                if (other) {
+                    tx = Math.floor(other.x); ty = Math.floor(other.y);
+                }
+            }
+
+            if (tx !== undefined && ty !== undefined && isWalkable(tx, ty)) {
+                if (isPathClearOfWater(ent.x, ent.y, tx, ty)) { 
+                    ent.path = [{ x: tx + 0.5, y: ty + 0.5 }]; 
+                    ent.target = ent.path[0]; 
+                } else { 
+                    const path = findPath(ent.x, ent.y, tx, ty); 
+                    if (path) { ent.path = path; ent.target = path[0]; } 
+                }
             }
         }
     });
