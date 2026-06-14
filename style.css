@@ -93,6 +93,44 @@ body, html {
     background: currentColor;
     box-shadow: 0 0 8px currentColor;
 }
+.stone-container, .wood-container {
+    position: relative;
+    margin-right: 24px;
+    display: flex;
+    align-items: center;
+}
+
+.resource-gain {
+    position: absolute;
+    left: 100%;
+    margin-left: -28px;
+    color: #ffd700;
+    font-weight: 800;
+    font-size: 18px;
+    opacity: 0;
+    white-space: nowrap;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.4);
+    animation: stoneSlide 1.2s ease-out forwards;
+}
+
+@keyframes stoneSlide {
+    0% { 
+        opacity: 0; 
+        transform: translateX(-30px); 
+    }
+    20% { 
+        opacity: 1; 
+        transform: translateX(0); 
+    }
+    80% { 
+        opacity: 1; 
+        transform: translateX(0); 
+    }
+    100% { 
+        opacity: 0; 
+        transform: translateX(-10px); 
+    }
+}
 #time {
     font-weight: 700;
     color: #ffd54f;

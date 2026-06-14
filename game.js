@@ -26,6 +26,7 @@ const state = {
     resources: {
         silver: 0,
         stone: 0,
+        wood: 0,
         food: 10
     },
     entities: [],
@@ -54,73 +55,18 @@ const state = {
         endX: 0,
         endY: 0
     },
-    popups: [],
+    chopSelection: {
+        active: false,
+        startX: 0,
+        startY: 0,
+        endX: 0,
+        endY: 0
+    },
     isWorkPaused: false,
     keys: {},
-    keyPressTime: {}
+    keyPressTime: {},
+    treeFalls: []
 };
-
-const CHARACTER_THOUGHTS = {
-    idle: [
-        "Хорошая погода сегодня.",
-        "Интересно, что там за горизонтом?",
-        "Надо бы чем-нибудь заняться...",
-        "Опять я просто стою и смотрю в никуда.",
-        "Жизнь — странная штука.",
-        "Хм, а этот камень всегда здесь лежал?",
-        "Скучновато как-то."
-    ],
-    working: [
-        "Труд облагораживает.",
-        "Работа, работа, перейди на Федота...",
-        "Еще немного, и будет готово.",
-        "Кирка тяжеловата сегодня.",
-        "Строительство — это искусство.",
-        "Главное — не перетрудиться.",
-        "Опять работа!"
-    ],
-    hungry: [
-        "Живот урчит...",
-        "Когда уже обед?",
-        "Я бы сейчас съел целого кабана.",
-        "Еда... мне нужна еда.",
-        "Сил совсем нет от голода."
-    ],
-    tired: [
-        "Глаза слипаются.",
-        "Поспать бы часиков десять.",
-        "Устал я что-то.",
-        "Ноги едва держат.",
-        "Скоро я усну прямо на ходу."
-    ],
-    moving: [
-        "Иду куда глаза глядят.",
-        "Движение — это жизнь.",
-        "Надо проверить, что там.",
-        "Прогулка на свежем воздухе полезна."
-    ]
-};
-
-function addCharacterThought(ent) {
-    let category = 'idle';
-    if (ent.job) category = 'working';
-    else if (ent.target) category = 'moving';
-    
-    if (ent.needs.food < 30) category = 'hungry';
-    else if (ent.needs.rest < 30) category = 'tired';
-
-    const phrases = CHARACTER_THOUGHTS[category];
-    const message = phrases[Math.floor(Math.random() * phrases.length)];
-
-    state.popups.push({
-        entityId: ent.id,
-        message: message,
-        x: ent.x,
-        y: ent.y,
-        createdAt: Date.now(),
-        duration: 3000
-    });
-}
 
 const TILE_TYPES = {
     GRASS: { color: 'rgb(95, 94, 40)', name: 'Grass', moveCost: 1 },
@@ -131,7 +77,8 @@ const TILE_TYPES = {
     DEEP_WATER: { color: '#0d47a1', name: 'Deep Water', solid: true },
     STONE: { color: '#757575', name: 'Stone', solid: true, harvestable: 'stone' },
     SAND: { color: '#c2b280', name: 'Sand', moveCost: 1.5 },
-    WALL: { color: '#424242', name: 'Wall', solid: true }
+    WALL: { color: '#424242', name: 'Wall', solid: true },
+    TREE: { color: 'rgb(95, 94, 40)', name: 'Tree', solid: true, harvestable: 'wood' }
 };
 
 const Noise = {
@@ -186,6 +133,7 @@ Noise.init();
 function updateResourceUI() {
     document.getElementById('silver-count').textContent = state.resources.silver;
     document.getElementById('stone-count').textContent = state.resources.stone;
+    document.getElementById('wood-count').textContent = state.resources.wood;
     document.getElementById('food-count').textContent = state.resources.food;
 }
 
@@ -240,7 +188,7 @@ function initMap() {
             if (distFromCenter < 5) {
                 if (type.solid || type === TILE_TYPES.WATER || type === TILE_TYPES.DEEP_WATER) type = TILE_TYPES.GRASS;
             }
-            row.push({ type, x, y, elevation });
+            row.push({ type, x, y, elevation, moisture });
         }
         state.map.tiles.push(row);
     }
@@ -356,6 +304,62 @@ function initMap() {
                 state.map.tiles[y][x].type = TILE_TYPES.STONE;
                 usedPositions.add(`${x},${y}`);
             });
+        }
+    }
+    
+    // Generate Forest biome with trees
+    const forestPositions = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            if (tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS) {
+                // Check if near boundary between grass types
+                let hasDifferentGrassNeighbor = false;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                            const neighborTile = state.map.tiles[ny][nx];
+                            if ((tile.type === TILE_TYPES.GRASS && neighborTile.type === TILE_TYPES.DARK_GRASS) ||
+                                (tile.type === TILE_TYPES.DARK_GRASS && neighborTile.type === TILE_TYPES.GRASS)) {
+                                hasDifferentGrassNeighbor = true;
+                            }
+                        }
+                    }
+                }
+                if (hasDifferentGrassNeighbor || Math.random() < 0.1) {
+                    forestPositions.push({ x, y });
+                }
+            }
+        }
+    }
+    
+    const treePositions = new Set();
+    for (let i = 0; i < 100; i++) {
+        if (forestPositions.length === 0) break;
+        
+        const randomIndex = Math.floor(Math.random() * forestPositions.length);
+        const pos = forestPositions[randomIndex];
+        const key = `${pos.x},${pos.y}`;
+        
+        // Check if there are no trees nearby (at least 1 tile gap)
+        let canPlaceTree = true;
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                const checkKey = `${pos.x + dx},${pos.y + dy}`;
+                if (treePositions.has(checkKey)) {
+                    canPlaceTree = false;
+                    break;
+                }
+            }
+            if (!canPlaceTree) break;
+        }
+        
+        if (canPlaceTree) {
+            treePositions.add(key);
+            state.map.tiles[pos.y][pos.x].type = TILE_TYPES.TREE;
         }
     }
     
@@ -521,6 +525,60 @@ function updateChunk(chunk) {
                         ctx.moveTo(lx * ts + ts, ly * ts);
                         ctx.lineTo(lx * ts + ts, ly * ts + ts);
                         ctx.stroke();
+                    }
+                } else if (tile.type === TILE_TYPES.TREE) {
+                    // Draw tree trunk (longer)
+                    ctx.fillStyle = '#8B4513';
+                    const trunkWidth = ts * 0.25;
+                    const trunkHeight = ts * 0.7;
+                    const trunkX = lx * ts + (ts - trunkWidth) / 2;
+                    const trunkY = ly * ts + ts - trunkHeight;
+                    ctx.fillRect(trunkX, trunkY, trunkWidth, trunkHeight);
+                    
+                    // Draw tree foliage (polygonal low-poly style)
+                    const foliageColors = ['#228B22', '#2E8B2E', '#3CB371', '#2E8B57', '#32CD32'];
+                    const foliageY = ly * ts + ts * 0.05;
+                    const foliageWidth = ts * 0.95;
+                    const foliageHeight = ts * 0.65;
+                    const foliageX = lx * ts + (ts - foliageWidth) / 2;
+                    
+                    // Draw multiple polygonal layers for foliage
+                    for (let layer = 0; layer < 3; layer++) {
+                        const layerWidth = foliageWidth * (1 - layer * 0.18);
+                        const layerHeight = foliageHeight * (1 - layer * 0.12);
+                        const layerX = lx * ts + (ts - layerWidth) / 2;
+                        const layerY = foliageY + layer * (foliageHeight * 0.12);
+                        
+                        ctx.fillStyle = foliageColors[layer % foliageColors.length];
+                        
+                        // Draw a low-poly polygon for each layer
+                        ctx.beginPath();
+                        // Bottom left corner
+                        ctx.moveTo(layerX + layerWidth * 0.08, layerY + layerHeight);
+                        // Left side
+                        ctx.lineTo(layerX + layerWidth * 0.03, layerY + layerHeight * 0.55);
+                        // Top left
+                        ctx.lineTo(layerX + layerWidth * 0.18, layerY + layerHeight * 0.18);
+                        // Top center
+                        ctx.lineTo(layerX + layerWidth * 0.5, layerY);
+                        // Top right
+                        ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
+                        // Right side
+                        ctx.lineTo(layerX + layerWidth * 0.97, layerY + layerHeight * 0.55);
+                        // Bottom right corner
+                        ctx.lineTo(layerX + layerWidth * 0.92, layerY + layerHeight);
+                        // Close the polygon
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Add some darker shade triangles for 3D effect
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+                        ctx.beginPath();
+                        ctx.moveTo(layerX + layerWidth * 0.5, layerY);
+                        ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
+                        ctx.lineTo(layerX + layerWidth * 0.62, layerY + layerHeight * 0.42);
+                        ctx.closePath();
+                        ctx.fill();
                     }
                 }
             }
@@ -691,10 +749,11 @@ function tryPlaceJob(mouseX, mouseY) {
         let jobType = null;
         if (state.currentOrder === 'architect') jobType = 'build_wall';
         else if (state.currentOrder === 'mine') jobType = 'mine';
+        else if (state.currentOrder === 'chop') jobType = 'chop';
         else if (state.currentOrder === 'unarchitect') jobType = 'destruct';
-        
+
         const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === jobType);
-        
+
         if (existingJobIndex !== -1) {
             const removedJob = state.jobs[existingJobIndex];
             state.jobs.splice(existingJobIndex, 1);
@@ -717,6 +776,7 @@ function tryPlaceJob(mouseX, mouseY) {
                 }
             }
             else if (state.currentOrder === 'mine' && state.map.tiles[ty][tx].type === TILE_TYPES.STONE) job = { type: 'mine', x: tx, y: ty, progress: 0, assigned: false };
+            else if (state.currentOrder === 'chop' && state.map.tiles[ty][tx].type === TILE_TYPES.TREE) job = { type: 'chop', x: tx, y: ty, progress: 0, assigned: false };
             else if (state.currentOrder === 'unarchitect' && state.map.tiles[ty][tx].type === TILE_TYPES.WALL) job = { type: 'destruct', x: tx, y: ty, progress: 0, assigned: false };
             if (job) { 
                 state.jobs.push(job); 
@@ -747,6 +807,12 @@ window.addEventListener('mousedown', (e) => {
             state.mineSelection.startY = e.clientY;
             state.mineSelection.endX = e.clientX;
             state.mineSelection.endY = e.clientY;
+        } else if (state.currentOrder === 'chop') {
+            state.chopSelection.active = true;
+            state.chopSelection.startX = e.clientX;
+            state.chopSelection.startY = e.clientY;
+            state.chopSelection.endX = e.clientX;
+            state.chopSelection.endY = e.clientY;
         } else if (state.currentOrder) {
             state.isPainting = true;
             tryPlaceJob(e.clientX, e.clientY);
@@ -772,24 +838,7 @@ window.addEventListener('mousedown', (e) => {
             const tx = Math.floor(worldPos.x / state.map.tileSize);
             const ty = Math.floor(worldPos.y / state.map.tileSize);
             if (isWalkable(tx, ty)) {
-                const now = Date.now();
                 state.selectedEntities.forEach(ent => {
-                    if (!ent.lastRightClickTimes) ent.lastRightClickTimes = [];
-                    ent.lastRightClickTimes.push(now);
-                    ent.lastRightClickTimes = ent.lastRightClickTimes.filter(t => now - t < 1000);
-                    
-                    if (ent.lastRightClickTimes.length >= 5) {
-                        state.popups.push({
-                            entityId: ent.id,
-                            message: 'Я очень устал босс...',
-                            x: ent.x,
-                            y: ent.y,
-                            createdAt: now,
-                            duration: 2000
-                        });
-                        ent.lastRightClickTimes = [];
-                    }
-                    
                     if (isPathClearOfWater(ent.x, ent.y, tx, ty)) {
                         ent.path = [{ x: tx + 0.5, y: ty + 0.5 }]; ent.target = ent.path[0]; ent.job = null; ent.isManualMove = true;
                     } else {
@@ -948,69 +997,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function toggleUI() { document.getElementById('ui-overlay').classList.toggle('ui-hidden'); }
 
+function showStoneGain(amount) {
+    const stoneGainEl = document.getElementById('stone-gain');
+    
+    // Удаляем старую анимацию
+    stoneGainEl.style.animation = 'none';
+    stoneGainEl.offsetHeight; // Триггер reflow
+    
+    // Устанавливаем текст
+    stoneGainEl.innerText = `+${amount}`;
+    
+    // Запускаем новую анимацию
+    stoneGainEl.style.animation = 'stoneSlide 1.2s ease-out forwards';
+}
+
+function showWoodGain(amount) {
+    const woodGainEl = document.getElementById('wood-gain');
+    
+    // Удаляем старую анимацию
+    woodGainEl.style.animation = 'none';
+    woodGainEl.offsetHeight; // Триггер reflow
+    
+    // Устанавливаем текст
+    woodGainEl.innerText = `+${amount}`;
+    
+    // Запускаем новую анимацию
+    woodGainEl.style.animation = 'stoneSlide 1.2s ease-out forwards';
+}
+
 function toggleFogOfWar() {
     state.map.fogOfWarEnabled = !state.map.fogOfWarEnabled;
-    const generateOreVein = (startX, startY) => {
-        const veinSize = Math.floor(Math.random() * 4) + 2; 
-        const veinTiles = new Set();
-        veinTiles.add(`${startX},${startY}`);
-        const directions = [
-            { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-            { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-        ];
-        
-        for (let i = 1; i < veinSize; i++) {
-            const currentTiles = Array.from(veinTiles).map(t => t.split(',').map(Number));
-            let foundNext = false;
-            
-            for (let tries = 0; tries < 50 && !foundNext; tries++) {
-                const [cx, cy] = currentTiles[Math.floor(Math.random() * currentTiles.length)];
-                const dir = directions[Math.floor(Math.random() * directions.length)];
-                const nx = cx + dir.dx;
-                const ny = cy + dir.dy;
-                
-                if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
-                    const tile = state.map.tiles[ny][nx];
-                    const key = `${nx},${ny}`;
-                    
-                    if (tile.type === TILE_TYPES.SOIL && !veinTiles.has(key)) {
-                        veinTiles.add(key);
-                        foundNext = true;
-                    }
-                }
-            }
-        }
-        
-        return Array.from(veinTiles).map(t => t.split(',').map(Number));
-    };
-    
-    const soilPositions = [];
-    for (let y = 0; y < state.map.height; y++) {
-        for (let x = 0; x < state.map.width; x++) {
-            if (state.map.tiles[y][x].type === TILE_TYPES.SOIL) {
-                soilPositions.push({ x, y });
-            }
-        }
-    }
-    
-    const usedPositions = new Set();
-    for (let i = 0; i < 50; i++) {
-        if (soilPositions.length === 0) break;
-        
-        const randomIndex = Math.floor(Math.random() * soilPositions.length);
-        const startPos = soilPositions[randomIndex];
-        const key = `${startPos.x},${startPos.y}`;
-        
-        if (!usedPositions.has(key)) {
-            const vein = generateOreVein(startPos.x, startPos.y);
-            vein.forEach(([x, y]) => {
-                state.map.tiles[y][x].type = TILE_TYPES.STONE;
-                usedPositions.add(`${x},${y}`);
-            });
-        }
-    }
-    
-    state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 }
 
 window.addEventListener('mousemove', (e) => {
@@ -1022,6 +1038,10 @@ window.addEventListener('mousemove', (e) => {
     if (state.mineSelection.active) {
         state.mineSelection.endX = e.clientX;
         state.mineSelection.endY = e.clientY;
+    }
+    if (state.chopSelection.active) {
+        state.chopSelection.endX = e.clientX;
+        state.chopSelection.endY = e.clientY;
     }
     if (state.isPainting) { tryPlaceJob(e.clientX, e.clientY); }
     state.camera.lastMouseX = e.clientX; state.camera.lastMouseY = e.clientY;
@@ -1076,6 +1096,46 @@ window.addEventListener('mouseup', (e) => {
         
         state.mineSelection.active = false;
     }
+    if (state.chopSelection.active && e.button === 0) {
+        state.chopSelection.endX = e.clientX;
+        state.chopSelection.endY = e.clientY;
+
+        const startWorld = screenToWorld(state.chopSelection.startX, state.chopSelection.startY);
+        const endWorld = screenToWorld(state.chopSelection.endX, state.chopSelection.endY);
+
+        const minTX = Math.floor(Math.min(startWorld.x, endWorld.x) / state.map.tileSize);
+        const maxTX = Math.floor(Math.max(startWorld.x, endWorld.x) / state.map.tileSize);
+        const minTY = Math.floor(Math.min(startWorld.y, endWorld.y) / state.map.tileSize);
+        const maxTY = Math.floor(Math.max(startWorld.y, endWorld.y) / state.map.tileSize);
+
+        for (let ty = Math.max(0, minTY); ty <= Math.min(state.map.height - 1, maxTY); ty++) {
+            for (let tx = Math.max(0, minTX); tx <= Math.min(state.map.width - 1, maxTX); tx++) {
+                const tile = state.map.tiles[ty][tx];
+                if (tile.type === TILE_TYPES.TREE) {
+                    const existingJobIndex = state.jobs.findIndex(j => j.x === tx && j.y === ty && j.type === 'chop');
+                    if (existingJobIndex !== -1) {
+                        const removedJob = state.jobs[existingJobIndex];
+                        state.jobs.splice(existingJobIndex, 1);
+                        state.entities.forEach(ent => {
+                            if (ent.job === removedJob) {
+                                ent.job = null;
+                            }
+                        });
+                    } else {
+                        const newJob = { type: 'chop', x: tx, y: ty, progress: 0, assigned: false };
+                        state.jobs.push(newJob);
+                        state.selectedEntities.forEach(ent => {
+                            if (!ent.job) {
+                                assignJobToEntity(ent, newJob);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        
+        state.chopSelection.active = false;
+    }
     state.isPainting = false;
     state.camera.isDragging = false;
 });
@@ -1117,9 +1177,6 @@ function update() {
         if (regenProgress) regenProgress.style.width = '0%';
     }
     
-    const now = Date.now();
-    state.popups = state.popups.filter(popup => now - popup.createdAt < popup.duration);
-
     state.time.tick++;
     if (state.time.tick % 60 === 0) {
         state.time.minute++;
@@ -1129,11 +1186,17 @@ function update() {
         }
         updateTimeUI();
     }
-    state.entities.forEach(ent => {
-        if (Math.random() < 0.0005) {
-            addCharacterThought(ent);
+    
+    // Update tree falls
+    for (let i = state.treeFalls.length - 1; i >= 0; i--) {
+        const tree = state.treeFalls[i];
+        tree.progress += 0.02;
+        if (tree.progress >= 1) {
+            state.treeFalls.splice(i, 1);
         }
-
+    }
+    
+    state.entities.forEach(ent => {
         if (ent.status !== 'sleeping') {
             ent.needs.food = Math.max(0, ent.needs.food - 0.002);
             ent.needs.rest = Math.max(0, ent.needs.rest - 0.0015);
@@ -1179,27 +1242,45 @@ function update() {
                 ent.x += (dx / dist) * ent.speed * speedMult; ent.y += (dy / dist) * ent.speed * speedMult;
             }
         } else if (ent.job) {
-            const dx = (ent.job.x + 0.5) - ent.x; const dy = (ent.job.y + 0.5) - ent.y;
-            if (Math.sqrt(dx * dx + dy * dy) < 0.2) {
-                ent.job.progress += 0.5; 
-                if (ent.job.progress >= 100) {
-                    const job = ent.job; const tx = job.x; const ty = job.y;
-                    if (job.type === 'build_wall') state.map.tiles[ty][tx].type = TILE_TYPES.WALL;
-                    else if (job.type === 'mine') { 
-                        state.map.tiles[ty][tx].type = TILE_TYPES.SOIL; 
-                        state.resources.stone += 10; 
-                        updateResourceUI(); 
+                const dx = (ent.job.x + 0.5) - ent.x; const dy = (ent.job.y + 0.5) - ent.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 0.2) {
+                    ent.job.progress += 0.5; 
+                    if (ent.job.progress >= 100) {
+                        const job = ent.job; const tx = job.x; const ty = job.y;
+                        if (job.type === 'build_wall') state.map.tiles[ty][tx].type = TILE_TYPES.WALL;
+                        else if (job.type === 'mine') { 
+                            state.map.tiles[ty][tx].type = TILE_TYPES.SOIL; 
+                            const stoneGain = Math.floor(Math.random() * 16) + 81;
+                            state.resources.stone += stoneGain; 
+                            showStoneGain(stoneGain);
+                            updateResourceUI(); 
+                        }
+                        else if (job.type === 'chop') {
+                            // Add tree fall animation
+                            state.treeFalls.push({
+                                x: tx,
+                                y: ty,
+                                progress: 0,
+                                direction: Math.random() < 0.5 ? 1 : -1
+                            });
+                            // Set tile back to grass
+                            state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
+                            // Add wood
+                            const woodGain = Math.floor(Math.random() * 16) + 81;
+                            state.resources.wood += woodGain;
+                            showWoodGain(woodGain);
+                            updateResourceUI();
+                        }
+                        else if (job.type === 'destruct') {
+                            state.map.tiles[ty][tx].type = TILE_TYPES.SOIL;
+                            state.resources.stone += 6; 
+                            updateResourceUI();
+                        }
+                        state.map.chunks[Math.floor(ty / state.map.chunkSize)][Math.floor(tx / state.map.chunkSize)].dirty = true;
+                        state.jobs = state.jobs.filter(j => j !== job); ent.job = null;
                     }
-                    else if (job.type === 'destruct') {
-                        state.map.tiles[ty][tx].type = TILE_TYPES.SOIL;
-                        state.resources.stone += 6; 
-                        updateResourceUI();
-                    }
-                    state.map.chunks[Math.floor(ty / state.map.chunkSize)][Math.floor(tx / state.map.chunkSize)].dirty = true;
-                    state.jobs = state.jobs.filter(j => j !== job); ent.job = null;
-                }
-            } else if (!ent.target) assignJobToEntity(ent, ent.job);
-        } else if (Math.random() < 0.005) {
+                } else if (!ent.target) assignJobToEntity(ent, ent.job);
+            } else if (Math.random() < 0.005) {
             let tx, ty;
             if (Math.random() < 0.7) {
                 for (let attempt = 0; attempt < 10; attempt++) {
@@ -1258,7 +1339,62 @@ function render() {
             ctx.drawImage(chunk.canvas, cx * chunkSizePx, cy * chunkSizePx);
         }
     }
-    if (state.currentOrder === 'architect' || state.currentOrder === 'unarchitect' || state.currentOrder === 'mine') {
+    
+    // Draw falling trees
+    state.treeFalls.forEach((tree, index) => {
+        const tileX = tree.x * state.map.tileSize;
+        const tileY = tree.y * state.map.tileSize;
+        const ts = state.map.tileSize;
+        
+        ctx.save();
+        ctx.translate(tileX + ts / 2, tileY + ts);
+        const rotation = tree.progress * (Math.PI / 2) * tree.direction;
+        ctx.rotate(rotation);
+        ctx.translate(-ts / 2, 0);
+        
+        // Draw trunk
+        ctx.fillStyle = '#8B4513';
+        const trunkWidth = ts * 0.25;
+        const trunkHeight = ts * 0.7;
+        ctx.fillRect((ts - trunkWidth) / 2, -trunkHeight, trunkWidth, trunkHeight);
+        
+        // Draw foliage
+        const foliageColors = ['#228B22', '#2E8B2E', '#3CB371', '#2E8B57', '#32CD32'];
+        const foliageY = ts * 0.05;
+        const foliageWidth = ts * 0.95;
+        const foliageHeight = ts * 0.65;
+        
+        for (let layer = 0; layer < 3; layer++) {
+            const layerWidth = foliageWidth * (1 - layer * 0.18);
+            const layerHeight = foliageHeight * (1 - layer * 0.12);
+            const layerX = (ts - layerWidth) / 2;
+            const layerY = foliageY + layer * (foliageHeight * 0.12);
+            
+            ctx.fillStyle = foliageColors[layer % foliageColors.length];
+            
+            ctx.beginPath();
+            ctx.moveTo(layerX + layerWidth * 0.08, layerY + layerHeight);
+            ctx.lineTo(layerX + layerWidth * 0.03, layerY + layerHeight * 0.55);
+            ctx.lineTo(layerX + layerWidth * 0.18, layerY + layerHeight * 0.18);
+            ctx.lineTo(layerX + layerWidth * 0.5, layerY);
+            ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
+            ctx.lineTo(layerX + layerWidth * 0.97, layerY + layerHeight * 0.55);
+            ctx.lineTo(layerX + layerWidth * 0.92, layerY + layerHeight);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+            ctx.beginPath();
+            ctx.moveTo(layerX + layerWidth * 0.5, layerY);
+            ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
+            ctx.lineTo(layerX + layerWidth * 0.62, layerY + layerHeight * 0.42);
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        ctx.restore();
+    });
+    if (state.currentOrder === 'architect' || state.currentOrder === 'unarchitect' || state.currentOrder === 'mine' || state.currentOrder === 'chop') {
         const mouseWorld = screenToWorld(state.camera.lastMouseX, state.camera.lastMouseY);
         const tx = Math.floor(mouseWorld.x / state.map.tileSize);
         const ty = Math.floor(mouseWorld.y / state.map.tileSize);
@@ -1267,6 +1403,8 @@ function render() {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
             } else if (state.currentOrder === 'mine') {
                 ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
+            } else if (state.currentOrder === 'chop') {
+                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
             } else {
                 ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
             }
@@ -1281,6 +1419,9 @@ function render() {
         } else if (job.type === 'mine') {
             ctx.setLineDash([3, 3]);
             ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+        } else if (job.type === 'chop') {
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = 'rgba(139, 69, 19, 0.5)';
         } else {
             ctx.setLineDash([2, 2]);
             ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
@@ -1292,6 +1433,8 @@ function render() {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
             } else if (job.type === 'mine') {
                 ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
+            } else if (job.type === 'chop') {
+                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
             } else {
                 ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
             }
@@ -1365,23 +1508,22 @@ function render() {
         
         ctx.setLineDash([]);
     }
-    
-    state.popups.forEach(popup => {
-        const screenPos = worldToScreen(popup.x * state.map.tileSize, popup.y * state.map.tileSize);
+    if (state.chopSelection.active) {
+        const minX = Math.min(state.chopSelection.startX, state.chopSelection.endX);
+        const minY = Math.min(state.chopSelection.startY, state.chopSelection.endY);
+        const width = Math.abs(state.chopSelection.endX - state.chopSelection.startX);
+        const height = Math.abs(state.chopSelection.endY - state.chopSelection.startY);
         
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        const textWidth = ctx.measureText(popup.message).width + 20;
-        const textHeight = 30;
-        const boxX = screenPos.x - textWidth / 2;
-        const boxY = screenPos.y - 50;
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(minX, minY, width, height);
         
-        ctx.fillRect(boxX, boxY, textWidth, textHeight);
+        ctx.fillStyle = 'rgba(139, 69, 19, 0.1)';
+        ctx.fillRect(minX, minY, width, height);
         
-        ctx.fillStyle = 'white';
-        ctx.font = '14px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(popup.message, screenPos.x, boxY + 20);
-    });
+        ctx.setLineDash([]);
+    }
     
     update();
     requestAnimationFrame(render);
