@@ -40,6 +40,7 @@ const state = {
     },
     currentOrder: null,
     isPainting: false,
+    lastPaintedTile: null,
     selectedEntities: [],
     selectionBox: {
         active: false,
@@ -64,8 +65,7 @@ const state = {
     },
     isWorkPaused: false,
     keys: {},
-    keyPressTime: {},
-    treeFalls: []
+    keyPressTime: {}
 };
 
 const TILE_TYPES = {
@@ -677,7 +677,7 @@ function initEntities() {
         speed: 0.1, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: []
     });
     state.entities.push({
-        id: 2, name: 'Arcen', x: 51.5, y: 50.5, color: '#f48fb1', target: null, job: null,
+        id: 2, name: 'Yaroslav', x: 51.5, y: 50.5, color: '#f48fb1', target: null, job: null,
         speed: 0.12, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: []
     });
     state.entities.push({
@@ -738,6 +738,14 @@ function tryPlaceJob(mouseX, mouseY) {
     const worldPos = screenToWorld(mouseX, mouseY);
     const tx = Math.floor(worldPos.x / state.map.tileSize);
     const ty = Math.floor(worldPos.y / state.map.tileSize);
+    
+    // Check if we've already painted this tile
+    if (state.lastPaintedTile && state.lastPaintedTile.x === tx && state.lastPaintedTile.y === ty) {
+        return;
+    }
+    // Update last painted tile
+    state.lastPaintedTile = { x: tx, y: ty };
+    
     if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
         let jobType = null;
         if (state.currentOrder === 'architect') jobType = 'build_wall';
@@ -766,14 +774,14 @@ function tryPlaceJob(mouseX, mouseY) {
             }
         } else {
             let job = null;
-            if (state.currentOrder === 'architect' && state.map.tiles[ty][tx].type !== TILE_TYPES.WALL) {
+            if (state.currentOrder === 'architect' && state.map.tiles[ty][tx].type !== TILE_TYPES.WALL && state.map.tiles[ty][tx].type !== TILE_TYPES.STONE) {
                 if (state.resources.stone >= 12) {
                     state.resources.stone -= 12;
                     updateResourceUI();
                     job = { type: 'build_wall', x: tx, y: ty, progress: 0, assigned: false };
                 }
             }
-            else if (state.currentOrder === 'bridge' && state.map.tiles[ty][tx].type === TILE_TYPES.WATER && state.map.tiles[ty][tx].type !== TILE_TYPES.BRIDGE) {
+            else if (state.currentOrder === 'bridge' && state.map.tiles[ty][tx].type === TILE_TYPES.WATER && state.map.tiles[ty][tx].type !== TILE_TYPES.BRIDGE && state.map.tiles[ty][tx].type !== TILE_TYPES.STONE) {
                 if (state.resources.wood >= 10) {
                     state.resources.wood -= 10;
                     updateResourceUI();
@@ -820,6 +828,7 @@ window.addEventListener('mousedown', (e) => {
             state.chopSelection.endY = e.clientY;
         } else if (state.currentOrder) {
             state.isPainting = true;
+            state.lastPaintedTile = null; // Reset for new painting session
             tryPlaceJob(e.clientX, e.clientY);
         } else {
             const worldPos = screenToWorld(e.clientX, e.clientY);
@@ -1053,6 +1062,8 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+    state.isPainting = false;
+    state.lastPaintedTile = null; // Reset after painting is done
     if (state.selectionBox.active && e.button === 0) {
         state.selectionBox.endX = e.clientX; state.selectionBox.endY = e.clientY;
         if (Math.abs(state.selectionBox.endX - state.selectionBox.startX) > 5 || Math.abs(state.selectionBox.endY - state.selectionBox.startY) > 5) selectEntitiesInBox();
@@ -1192,15 +1203,6 @@ function update() {
         updateTimeUI();
     }
     
-    // Update tree falls
-    for (let i = state.treeFalls.length - 1; i >= 0; i--) {
-        const tree = state.treeFalls[i];
-        tree.progress += 0.02;
-        if (tree.progress >= 1) {
-            state.treeFalls.splice(i, 1);
-        }
-    }
-    
     state.entities.forEach(ent => {
         if (ent.status !== 'sleeping') {
             ent.needs.food = Math.max(0, ent.needs.food - 0.002);
@@ -1262,16 +1264,7 @@ function update() {
                             updateResourceUI(); 
                         }
                         else if (job.type === 'chop') {
-                            // Add tree fall animation
-                            state.treeFalls.push({
-                                x: tx,
-                                y: ty,
-                                progress: 0,
-                                direction: Math.random() < 0.5 ? 1 : -1
-                            });
-                            // Set tile back to grass
                             state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
-                            // Add wood
                             const woodGain = Math.floor(Math.random() * 16) + 81;
                             state.resources.wood += woodGain;
                             showWoodGain(woodGain);
@@ -1351,77 +1344,29 @@ function render() {
         }
     }
     
-    // Draw falling trees
-    state.treeFalls.forEach((tree, index) => {
-        const tileX = tree.x * state.map.tileSize;
-        const tileY = tree.y * state.map.tileSize;
-        const ts = state.map.tileSize;
-        
-        ctx.save();
-        ctx.translate(tileX + ts / 2, tileY + ts);
-        const rotation = tree.progress * (Math.PI / 2) * tree.direction;
-        ctx.rotate(rotation);
-        ctx.translate(-ts / 2, 0);
-        
-        // Draw trunk
-        ctx.fillStyle = '#8B4513';
-        const trunkWidth = ts * 0.25;
-        const trunkHeight = ts * 0.7;
-        ctx.fillRect((ts - trunkWidth) / 2, -trunkHeight, trunkWidth, trunkHeight);
-        
-        // Draw foliage
-        const foliageColors = ['#228B22', '#2E8B2E', '#3CB371', '#2E8B57', '#32CD32'];
-        const foliageY = ts * 0.05;
-        const foliageWidth = ts * 0.95;
-        const foliageHeight = ts * 0.65;
-        
-        for (let layer = 0; layer < 3; layer++) {
-            const layerWidth = foliageWidth * (1 - layer * 0.18);
-            const layerHeight = foliageHeight * (1 - layer * 0.12);
-            const layerX = (ts - layerWidth) / 2;
-            const layerY = foliageY + layer * (foliageHeight * 0.12);
-            
-            ctx.fillStyle = foliageColors[layer % foliageColors.length];
-            
-            ctx.beginPath();
-            ctx.moveTo(layerX + layerWidth * 0.08, layerY + layerHeight);
-            ctx.lineTo(layerX + layerWidth * 0.03, layerY + layerHeight * 0.55);
-            ctx.lineTo(layerX + layerWidth * 0.18, layerY + layerHeight * 0.18);
-            ctx.lineTo(layerX + layerWidth * 0.5, layerY);
-            ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
-            ctx.lineTo(layerX + layerWidth * 0.97, layerY + layerHeight * 0.55);
-            ctx.lineTo(layerX + layerWidth * 0.92, layerY + layerHeight);
-            ctx.closePath();
-            ctx.fill();
-            
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-            ctx.beginPath();
-            ctx.moveTo(layerX + layerWidth * 0.5, layerY);
-            ctx.lineTo(layerX + layerWidth * 0.82, layerY + layerHeight * 0.18);
-            ctx.lineTo(layerX + layerWidth * 0.62, layerY + layerHeight * 0.42);
-            ctx.closePath();
-            ctx.fill();
-        }
-        
-        ctx.restore();
-    });
     if (state.currentOrder === 'architect' || state.currentOrder === 'bridge' || state.currentOrder === 'unarchitect' || state.currentOrder === 'mine' || state.currentOrder === 'chop') {
         const mouseWorld = screenToWorld(state.camera.lastMouseX, state.camera.lastMouseY);
         const tx = Math.floor(mouseWorld.x / state.map.tileSize);
         const ty = Math.floor(mouseWorld.y / state.map.tileSize);
         if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
-            if (state.currentOrder === 'architect') {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            } else if (state.currentOrder === 'bridge') {
-                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
-            } else if (state.currentOrder === 'mine') {
-                ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
-            } else if (state.currentOrder === 'chop') {
-                ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
-            } else {
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+            const tile = state.map.tiles[ty][tx];
+            if ((state.currentOrder === 'architect' && tile.type !== TILE_TYPES.STONE) || 
+                (state.currentOrder === 'bridge' && tile.type !== TILE_TYPES.STONE) ||
+                state.currentOrder === 'mine' || state.currentOrder === 'chop' || 
+                state.currentOrder === 'unarchitect') {
+                if (state.currentOrder === 'architect') {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                } else if (state.currentOrder === 'bridge') {
+                    ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
+                } else if (state.currentOrder === 'mine') {
+                    ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
+                } else if (state.currentOrder === 'chop') {
+                    ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
+                } else {
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                }
+                ctx.fillRect(tx * state.map.tileSize, ty * state.map.tileSize, state.map.tileSize, state.map.tileSize);
             }
-            ctx.fillRect(tx * state.map.tileSize, ty * state.map.tileSize, state.map.tileSize, state.map.tileSize);
         }
     }
     drawFogOfWar();
@@ -1477,10 +1422,16 @@ function render() {
                 ctx.stroke();
                 ctx.setLineDash([]);
                 const lastPoint = ent.path[ent.path.length - 1];
+                const crossSize = state.map.tileSize / 6;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2 / state.camera.zoom;
+                const px = lastPoint.x * state.map.tileSize;
+                const py = lastPoint.y * state.map.tileSize;
                 ctx.beginPath();
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.arc(lastPoint.x * state.map.tileSize, lastPoint.y * state.map.tileSize, state.map.tileSize / 4, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.moveTo(px - crossSize, py - crossSize);
+                ctx.lineTo(px + crossSize, py + crossSize);
+                ctx.moveTo(px + crossSize, py - crossSize);
+                ctx.lineTo(px - crossSize, py + crossSize);
                 ctx.stroke();
             }
         }
@@ -1571,6 +1522,7 @@ window.regenerateWorld = function() {
     updateCharacterMenu();
 };
 window.setOrder = function(type) {
+    state.lastPaintedTile = null; // Reset when order changes
     if (type === 'work') {
         state.isWorkPaused = !state.isWorkPaused;
         const buttons = document.querySelectorAll('#bottom-menu button');
