@@ -504,6 +504,16 @@ function updateChunk(chunk) {
                         ctx.stroke();
                     }
                 } else if (tile.type === TILE_TYPES.TREE) {
+                    // Draw tree shadow first (so it appears under the tree)
+                    const shadowX = lx * ts + ts * 0.1;
+                    const shadowY = ly * ts + ts * 0.7;
+                    const shadowWidth = ts * 0.8;
+                    const shadowHeight = ts * 0.25;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+                    ctx.beginPath();
+                    ctx.ellipse(shadowX + shadowWidth / 2, shadowY + shadowHeight / 2, shadowWidth / 2, shadowHeight / 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
                     // Draw tree trunk (longer)
                     ctx.fillStyle = '#8B4513';
                     const trunkWidth = ts * 0.25;

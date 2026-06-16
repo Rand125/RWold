@@ -15,8 +15,9 @@ body, html {
 }
 #gameCanvas {
     display: block;
-    cursor: crosshair;
+    cursor: url('cursor.png') 0 0, crosshair;
 }
+
 #ui-overlay {
     position: fixed;
     top: 0;
