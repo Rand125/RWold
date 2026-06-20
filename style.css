@@ -1,21 +1,112 @@
+:root {
+    --dota-bg: #121415;
+    --dota-panel: linear-gradient(135deg, rgba(18, 20, 21, 0.98) 0%, rgba(10, 12, 13, 0.95) 100%);
+    --dota-gold: #c5a455;
+    --dota-gold-bright: #e5c16f;
+    --dota-red: #a72929;
+    --dota-border: #3a3a3a;
+    --dota-border-light: #5a5a5a;
+    --dota-font-main: 'Oswald', sans-serif;
+    --dota-font-title: 'Cinzel', serif;
+    --dota-shadow: 0 0 25px rgba(0, 0, 0, 0.9), inset 0 0 30px rgba(0,0,0,0.4);
+    --dota-inner-glow: inset 0 0 12px rgba(197, 164, 85, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
 body, html {
     margin: 0;
     padding: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background-color: #1a1a1a;
-    font-family: 'Inter', 'Segoe UI', Roboto, sans-serif;
-    color: #f0f0f0;
+    background-color: var(--dota-bg);
+    font-family: var(--dota-font-main);
+    color: #e1e1e1;
+    text-transform: uppercase;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Always hide default cursor, we use custom */
+    cursor: none !important;
 }
+
+/* Ensure all elements also hide default cursor */
+* {
+    cursor: none !important;#custom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 99999;
+    width: 42px;
+    height: 42px;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* Improve quality for high-DPI displays */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    -webkit-transform: translate(-10px, -10px) translateZ(0);
+    transform: translate(-10px, -10px) translateZ(0); /* <- это смещение курсора (хотпоинт) */
+    image-rendering: auto;
+    display: none;
+}
+}
+
 #game-container {
     position: relative;
     width: 100vw;
     height: 100vh;
 }
+
 #gameCanvas {
     display: block;
-    cursor: url('cursor.png') 0 0, crosshair;
+}
+
+#custom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 99999;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* Improve quality for high-DPI displays */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    image-rendering: auto;
+    display: none;
+}
+
+/* Default cursor */
+#custom-cursor.cursor-default {
+    width: 26px;
+    height: 26px;
+    -webkit-transform: translate(-10px, -10px) translateZ(0);
+    transform: translate(0px, 1px) translateZ(0);
+}
+
+/* Select cursor (UI/buttons) */
+#custom-cursor.cursor-select {
+    width: 26px;
+    height: 26px;
+    -webkit-transform: translate(-10px, -10px) translateZ(0);
+    transform: translate(-11px, 1px) translateZ(0);
+}
+
+/* Chop cursor (trees) */
+#custom-cursor.cursor-chop {
+    width: 42px;
+    height: 42px;
+    -webkit-transform: translate(-10px, -10px) translateZ(0);
+    transform: translate(-9px, -6px) translateZ(0);
+}
+
+/* Mine cursor (stones/ores) */
+#custom-cursor.cursor-mine {
+    width: 42px;
+    height: 42px;
+    -webkit-transform: translate(-10px, -10px) translateZ(0);
+    transform: translate(-4px, -8px) translateZ(0);
 }
 
 #ui-overlay {
@@ -27,338 +118,658 @@ body, html {
     pointer-events: none;
     z-index: 10;
 }
+
 #ui-overlay > * {
     pointer-events: auto;
-    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 #ui-overlay.ui-hidden > * {
     pointer-events: none;
 }
+
 #ui-overlay.ui-hidden #regen-btn {
     transform: translate(-100px, -100px);
     opacity: 0;
 }
+
 #ui-overlay.ui-hidden #top-bar {
     transform: translateX(-50%) translateY(-100px);
     opacity: 0;
 }
+
 #ui-overlay.ui-hidden #bottom-menu {
     transform: translateX(-50%) translateY(100px);
     opacity: 0;
 }
-#ui-overlay.ui-hidden #character-menu {
-    transform: translate(100px, 100px);
-    opacity: 0;
-}
-#ui-overlay.ui-hidden #inspect-panel {
-    transform: translateX(-100px);
-    opacity: 0;
-}
-#top-bar {
-    position: absolute; 
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: auto;
-    min-width: 420px;
-    background: rgba(20, 20, 20, 0.6);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    padding: 14px 28px;
-    display: flex;
-    justify-content: space-between;
-    box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 24px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 10px 15px -3px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-#resources {
-    display: flex;
-    align-items: center;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-}
-#resources span {
-    margin-right: 24px;
-    color: #81c784;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-#resources span::before {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: 0 0 8px currentColor;
-}
-.stone-container, .wood-container {
+
+.stone-container, .wood-container, .gold-container {
     position: relative;
-    margin-right: 24px;
-    display: flex;
-    align-items: center;
 }
 
 .resource-gain {
     position: absolute;
-    left: 100%;
-    margin-left: -28px;
-    color: #ffd700;
-    font-weight: 800;
+    left: 50%;
+    top: -5px;
+    transform: translateX(-50%);
+    color: #ffffff;
+    font-weight: 700;
     font-size: 18px;
     opacity: 0;
     white-space: nowrap;
-    text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.4);
+    text-shadow: 0 0 10px var(--dota-gold-bright), 0 0 20px rgba(229, 193, 111, 0.3);
     animation: stoneSlide 1.2s ease-out forwards;
 }
 
 @keyframes stoneSlide {
-    0% { 
-        opacity: 0; 
-        transform: translateX(-30px); 
-    }
-    20% { 
-        opacity: 1; 
-        transform: translateX(0); 
-    }
-    80% { 
-        opacity: 1; 
-        transform: translateX(0); 
-    }
-    100% { 
-        opacity: 0; 
-        transform: translateX(-10px); 
-    }
+    0% { opacity: 0; transform: translateX(-50%) translateY(0) scale(0.9); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(-20px) scale(1.05); }
+    80% { opacity: 1; transform: translateX(-50%) translateY(-25px) scale(1); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-40px) scale(0.9); }
 }
-#time {
-    font-weight: 700;
-    color: #ffd54f;
-    background: rgba(255, 213, 79, 0.1);
+
+#ui-overlay.ui-hidden #character-menu {
+    transform: translate(100px, 100px);
+    opacity: 0;
+}
+
+#ui-overlay.ui-hidden #inspect-panel {
+    transform: translateX(-100px);
+    opacity: 0;
+}
+
+#top-bar {
+    position: absolute; 
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 1400px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    box-sizing: border-box;
+    padding: 0 20px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+#top-bar > div {
+    pointer-events: auto;
+}
+
+.hud-left, .hud-right {
+    background: linear-gradient(180deg, rgba(20, 22, 24, 0.98) 0%, rgba(10, 12, 13, 0.95) 100%);
+    border: 2px solid var(--dota-border);
+    border-top: none;
+    padding: 8px 25px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    box-shadow: var(--dota-shadow);
+    position: relative;
+    min-width: 280px;
+}
+
+.hud-left {
+    border-radius: 0 0 15px 0;
+    clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%);
+    border-left: none;
+    left: -20px;
+}
+
+.hud-right {
+    border-radius: 0 0 0 15px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 5% 100%);
+    border-right: none;
+    right: -20px;
+}
+
+.hud-left::after, .hud-right::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--dota-gold);
+    box-shadow: 0 0 10px var(--dota-gold);
+}
+
+.hud-center {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    z-index: 10;
+}
+
+#resources, #resources-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+}
+
+.hud-left #resources {
+    justify-content: flex-start;
+    padding-right: 20px;
+}
+
+.hud-right #resources-right {
+    justify-content: flex-end;
+    padding-left: 20px;
+}
+
+.res-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.4);
     padding: 4px 12px;
-    border-radius: 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(197, 164, 85, 0.2);
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    transition: all 0.3s ease;
 }
+
+.res-item:hover {
+    border-color: var(--dota-gold);
+    background: rgba(197, 164, 85, 0.05);
+}
+
+.res-icon {
+    font-size: 18px;
+    filter: drop-shadow(0 0 5px rgba(0,0,0,0.8));
+}
+
+#resources span, #resources-right span {
+    color: #fff;
+    font-family: var(--dota-font-main);
+    font-weight: 700;
+    font-size: 18px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    letter-spacing: 0.5px;
+}
+
+#silver-count { color: #e5c16f !important; }
+#stone-count { color: #aaa !important; }
+#wood-count { color: #a67c52 !important; }
+#food-count { color: #81c784 !important; }
+
+#time-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    top: 0;
+    filter: drop-shadow(0 5px 15px rgba(0,0,0,0.8));
+}
+
+.time-icons-wrapper {
+    position: relative;
+    width: 70px;
+    height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: -35px;
+    z-index: 5;
+    background: radial-gradient(circle, #1a1c1e 0%, #0a0b0c 100%);
+    border-radius: 50%;
+    border: 3px solid var(--dota-gold);
+    box-shadow: 0 0 20px rgba(0,0,0,0.8), inset 0 0 15px rgba(197,164,85,0.3);
+}
+
+.time-icon {
+    position: absolute;
+    font-size: 34px;
+    transition: all 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity: 0;
+    transform: scale(0.5) rotate(-45deg);
+    filter: drop-shadow(0 0 8px rgba(0,0,0,0.8));
+}
+
+.time-icon.active {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+}
+
+#time-icon-sun.active {
+    filter: drop-shadow(0 0 15px #ffb300);
+}
+
+#time-icon-moon.active {
+    filter: drop-shadow(0 0 15px #5ecfff);
+}
+
+#time {
+    font-family: var(--dota-font-title);
+    font-weight: 700;
+    color: var(--dota-gold-bright);
+    background: linear-gradient(180deg, #1a1a1a 0%, #000 100%);
+    padding: 35px 40px 10px 40px;
+    border: 2px solid var(--dota-gold);
+    border-top: none;
+    border-radius: 0 0 20px 20px;
+    font-size: 18px;
+    letter-spacing: 2px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.6);
+    min-width: 200px;
+    text-align: center;
+    clip-path: polygon(0 0, 100% 0, 90% 100%, 10% 100%);
+}
+
+#top-bar::after {
+    display: none;
+}
+
 #bottom-menu {
     position: absolute;
-    bottom: 30px;
+    bottom: 0;
     left: 50%;
     transform: translateX(-50%);
     width: auto;
-    background: rgba(20, 20, 20, 0.6);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    background: var(--dota-panel);
     display: flex;
     justify-content: center;
-    padding: 10px;
-    gap: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 28px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+    padding: 18px 35px 20px 35px;
+    gap: 18px;
+    border: 2px solid var(--dota-border);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    box-shadow: var(--dota-shadow);
+    border-top: 2px solid #4a4a4a;
 }
+
 button {
-    background: rgba(255, 255, 255, 0.03);
-    color: #ffffff;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 12px 22px;
+    background: linear-gradient(180deg, #2d2d2d 0%, #1a1a1a 100%);
+    color: #cccccc;
+    border: 1px solid #4a4a4a;
+    border-top: 1px solid #5a5a5a;
+    padding: 12px 30px;
     cursor: pointer;
-    font-size: 13px;
+    font-family: var(--dota-font-main);
+    font-size: 14px;
     font-weight: 600;
-    border-radius: 18px;
-    transition: all 0.25s cubic-bezier(0.23, 1, 0.32, 1);
-    text-transform: none;
-    letter-spacing: 0.2px;
+    text-transform: uppercase;
+    transition: all 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.3);
+    position: relative;
+    overflow: hidden;
+    border-radius: 2px;
+    letter-spacing: 0.7px;
 }
+
+button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+}
+
 button:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.2);
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+    background: linear-gradient(180deg, #3a3a3a 0%, #252525 100%);
+    color: #ffffff;
+    border-color: var(--dota-gold);
+    border-top-color: var(--dota-gold-bright);
+    box-shadow: 0 0 18px rgba(197, 164, 85, 0.25), inset 0 0 10px rgba(197,164,85,0.08);
+    transform: translateY(-2px);
 }
+
 button:active {
-    transform: translateY(-1px) scale(0.98);
+    background: linear-gradient(180deg, #1a1a1a 0%, #0f0f0f 100%);
+    transform: translateY(1px);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.5);
 }
+
+button::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--dota-gold), transparent);
+    opacity: 0.2;
+    transition: all 0.2s ease;
+}
+
+button:hover::after {
+    opacity: 1;
+    height: 3px;
+    box-shadow: 0 0 8px var(--dota-gold);
+}
+
 #inspect-panel {
     position: absolute;
-    bottom: 120px;
-    left: 30px;
-    width: 300px;
-    background: rgba(20, 20, 20, 0.7);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    padding: 24px;
-    border-radius: 28px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    bottom: 140px;
+    left: 35px;
+    width: 340px;
+    background: var(--dota-panel);
+    border: 2px solid var(--dota-border);
+    border-top: 2px solid #4a4a4a;
+    padding: 22px 24px;
+    border-radius: 4px;
+    box-shadow: var(--dota-shadow);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: bottom left;
+    cursor: move;
 }
+
+#inspect-panel.hidden {
+    display: block !important;
+    opacity: 0;
+    transform: scale(0.5) translate(-50px, 50px);
+    pointer-events: none;
+}
+
+.inspect-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0 0 16px 0;
+    border-bottom: 1px solid var(--dota-border);
+    padding-bottom: 12px;
+    cursor: move;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.inspect-header h3 {
+    font-family: var(--dota-font-title);
+    color: var(--dota-gold);
+    margin: 0;
+    font-size: 19px;
+    letter-spacing: 0.5px;
+}
+
+.minimize-btn {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+    border: 1px solid #4a4a4a;
+    border-radius: 2px;
+    color: #999;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.minimize-btn:hover {
+    background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
+    color: #fff;
+    border-color: #5a5a5a;
+}
+
+#inspect-widget {
+    position: absolute;
+    bottom: 140px;
+    left: 35px;
+    width: 60px;
+    height: 60px;
+    background: var(--dota-panel);
+    border: 2px solid var(--dota-border);
+    border-top: 2px solid #4a4a4a;
+    border-radius: 4px;
+    box-shadow: var(--dota-shadow);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    cursor: grab;
+    z-index: 100;
+    transform-origin: bottom left;
+}
+
+#inspect-widget:active {
+    cursor: grabbing;
+}
+
+#inspect-widget.hidden {
+    display: block !important;
+    opacity: 0;
+    transform: scale(0.5) translate(-50px, 50px);
+    pointer-events: none;
+}
+
+.widget-avatar {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));
+}
+
 .hidden {
     display: none !important;
-    opacity: 0;
-    transform: translateY(10px);
 }
+
 #debug-time-panel {
     position: absolute;
     top: 100px;
     left: 50%;
     transform: translateX(-50%);
-    background: #000;
-    padding: 10px;
+    background: var(--dota-panel);
+    border: 1px solid var(--dota-border);
+    padding: 18px 22px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     z-index: 1000;
+    box-shadow: var(--dota-shadow);
+    border-radius: 3px;
 }
+
 #debug-time-panel label {
-    color: #fff;
-    font-size: 12px;
+    color: var(--dota-gold);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    font-weight: 500;
 }
+
 #time-slider {
-    width: 200px;
+    width: 210px;
 }
+
 #slider-time-display {
     color: #fff;
+    font-size: 14px;
 }
+
 #regen-btn {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 70px;
+    left: 45px;
     z-index: 100;
-    background: rgba(20, 20, 20, 0.6);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 18px;
-    color: #ffd54f;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background: linear-gradient(180deg, #4a1a1a 0%, #2a0a0a 100%);
+    border: 1px solid var(--dota-red);
+    border-top: 1px solid #c73333;
+    border-radius: 3px;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
     overflow: hidden;
-    position: relative;
-    padding: 12px 22px;
+    padding: 11px 24px;
+    font-family: var(--dota-font-title);
+    letter-spacing: 1.2px;
+    font-size: 13px;
 }
+
+#regen-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+    transition: left 0.4s ease;
+}
+
+#regen-btn:hover::before {
+    left: 100%;
+}
+
 #regen-progress {
     position: absolute;
     top: 0;
     right: 0;
     height: 100%;
     width: 0%;
-    background: rgba(255, 213, 79, 0.3);
+    background: rgba(255, 255, 255, 0.1);
     pointer-events: none;
     transition: width 0.1s linear;
 }
-#regen-text {
-    position: relative;
-    z-index: 2;
-}
+
 #regen-btn:hover {
-    background: rgba(255, 213, 79, 0.15);
-    border-color: #ffd54f;
-    color: #fff;
+    background: linear-gradient(180deg, #5a2a2a 0%, #3a1a1a 100%);
+    border-color: #d73a3a;
+    box-shadow: 0 0 15px rgba(167, 41, 41, 0.3);
 }
+
 #character-menu {
     position: absolute;
-    bottom: 30px;
-    right: 30px;
-    background: rgba(20, 20, 20, 0.6);
-    backdrop-filter: blur(16px);
-    padding: 15px;
-    border-radius: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    bottom: 45px;
+    right: 45px;
+    background: var(--dota-panel);
+    padding: 22px 24px;
+    border: 2px solid var(--dota-border);
+    border-top: 2px solid #4a4a4a;
+    border-radius: 4px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    min-width: 150px;
+    gap: 16px;
+    min-width: 200px;
+    box-shadow: var(--dota-shadow);
 }
+
 #character-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
 }
+
 .character-card {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 14px;
+    gap: 14px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(0,0,0,0.2) 100%);
+    border: 1px solid #2a2a2a;
+    border-top: 1px solid #3a3a3a;
     cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid transparent;
+    transition: all 0.18s ease;
+    border-radius: 2px;
 }
+
 .character-card:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(0,0,0,0.25) 100%);
+    border-color: #5a5a5a;
+    border-top-color: #6a6a6a;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
+
 .character-card.selected {
-    background: rgba(79, 195, 247, 0.2);
-    border-color: #4fc3f7;
+    background: linear-gradient(135deg, rgba(197, 164, 85, 0.1) 0%, rgba(197,164,85,0.05) 100%);
+    border-color: var(--dota-gold);
+    border-top-color: var(--dota-gold-bright);
+    box-shadow: inset 0 0 15px rgba(197, 164, 85, 0.08), 0 0 12px rgba(197,164,85,0.12);
 }
+
 .character-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: #555;
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 22px;
+    border: 1px solid #3a3a3a;
+    border-radius: 2px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
 }
+
 .character-name {
-    font-size: 14px;
-    font-weight: 600;
-}
-#deselect-btn {
-    background: rgba(229, 57, 53, 0.2) !important;
-    border-color: rgba(229, 57, 53, 0.5) !important;
-    color: #ef5350 !important;
-}
-#deselect-btn:hover {
-    background: rgba(229, 57, 53, 0.4) !important;
-    color: #fff !important;
-}
-#inspect-title {
-    margin: 0 0 18px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 12px;
-    font-size: 20px;
-    font-weight: 800;
-    color: #4fc3f7;
-    letter-spacing: -0.5px;
-}
-#inspect-content {
-    line-height: 1.7;
     font-size: 15px;
-    color: #e0e0e0;
+    font-weight: 600;
+    color: #ddd;
+    letter-spacing: 0.3px;
 }
+
+#deselect-btn {
+    background: linear-gradient(180deg, #333 0%, #1a1a1a 100%) !important;
+    border-color: #444 !important;
+    border-top-color: #555 !important;
+    color: #999 !important;
+    margin-top: 12px;
+}
+
+#deselect-btn:hover {
+    background: linear-gradient(180deg, #444 0%, #2a2a2a 100%) !important;
+    color: #fff !important;
+    border-color: #666 !important;
+    border-top-color: #777 !important;
+}
+
+#inspect-title {
+    font-family: var(--dota-font-title);
+    margin: 0 0 16px 0;
+    border-bottom: 1px solid var(--dota-border);
+    padding-bottom: 12px;
+    font-size: 19px;
+    color: var(--dota-gold);
+    letter-spacing: 0.5px;
+}
+
+#inspect-content {
+    line-height: 1.6;
+    font-size: 14px;
+    color: #bbb;
+}
+
 #inspect-content p {
-    margin: 8px 0;
+    margin: 6px 0;
 }
+
 #architect-menu {
     position: absolute;
-    bottom: 120px;
+    bottom: 145px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(20, 20, 20, 0.75);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    padding: 20px;
-    border-radius: 24px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-    min-width: 300px;
+    background: var(--dota-panel);
+    border: 2px solid var(--dota-border);
+    border-top: 2px solid #4a4a4a;
+    padding: 22px 26px;
+    border-radius: 4px;
+    box-shadow: var(--dota-shadow);
+    min-width: 340px;
 }
+
 #architect-menu h3 {
+    font-family: var(--dota-font-title);
     margin: 0 0 16px 0;
     padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--dota-border);
     font-size: 18px;
-    font-weight: 700;
-    color: #4fc3f7;
+    color: var(--dota-gold);
+    letter-spacing: 0.5px;
 }
+
 .build-options {
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
+
 .build-options button {
     display: flex;
     align-items: center;
@@ -367,24 +778,172 @@ button:active {
     text-align: left;
     width: 100%;
 }
+
 .build-icon {
-    font-size: 24px;
-    margin-right: 12px;
+    font-size: 21px;
+    margin-right: 16px;
 }
+
 .build-cost {
     font-size: 12px;
-    color: #ffd54f;
-    background: rgba(255, 213, 79, 0.15);
+    color: var(--dota-gold-bright);
+    background: rgba(0, 0, 0, 0.4);
     padding: 4px 10px;
-    border-radius: 12px;
-    font-weight: 600;
+    border: 1px solid rgba(197, 164, 85, 0.2);
+    border-radius: 2px;
+    letter-spacing: 0.3px;
 }
+
 .inspect-actions {
     display: flex;
     gap: 10px;
-    margin: 15px 0;
+    margin: 16px 0 0 0;
 }
+
 .inspect-actions button {
     flex: 1;
-    padding: 8px;
+    padding: 9px;
+    font-size: 13px;
+}
+
+#action-panel {
+    position: absolute;
+    bottom: 140px;
+    left: 45px;
+    width: 320px;
+    background: var(--dota-panel);
+    border: 2px solid var(--dota-border);
+    border-top: 2px solid #4a4a4a;
+    border-radius: 4px;
+    box-shadow: var(--dota-shadow);
+    display: flex;
+    flex-direction: column;
+}
+
+.action-panel-header {
+    background: linear-gradient(180deg, rgba(197,164,85,0.2) 0%, transparent 100%);
+    padding: 12px 18px;
+    border-bottom: 2px solid var(--dota-border);
+}
+
+.panel-title {
+    font-family: var(--dota-font-title);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--dota-gold);
+    letter-spacing: 0.8px;
+    text-shadow: 0 0 5px rgba(197,164,85,0.3);
+}
+
+.action-list {
+    flex: 1;
+    min-height: 50px;
+    max-height: 350px;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.action-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(197,164,85,0.15);
+    border-radius: 4px;
+    padding: 10px 15px;
+    transition: all 0.2s ease;
+}
+
+.action-item:hover {
+    border-color: var(--dota-gold);
+    background: rgba(197,164,85,0.08);
+}
+
+.action-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.action-character {
+    font-family: var(--dota-font-main);
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+
+.action-status {
+    font-family: var(--dota-font-main);
+    font-size: 13px;
+    color: #aaa;
+    font-weight: 400;
+}
+
+.cancel-task-btn {
+    background: linear-gradient(180deg, #5a1a1a 0%, #3a0a0a 100%);
+    border: 1px solid var(--dota-red);
+    border-radius: 3px;
+    color: #fff;
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.cancel-task-btn:hover {
+    background: linear-gradient(180deg, #7a2a2a 0%, #4a1a1a 100%);
+    box-shadow: 0 0 10px rgba(167,41,41,0.4);
+    border-color: #ff5555;
+}
+
+.cancel-all-btn {
+    background: linear-gradient(180deg, #4a2a2a 0%, #2a0a0a 100%);
+    border: 1px solid var(--dota-red);
+    border-bottom: none;
+    border-radius: 0 0 4px 4px;
+    color: #ff9999;
+    padding: 12px;
+    font-family: var(--dota-font-main);
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 1px;
+}
+
+.cancel-all-btn:hover {
+    background: linear-gradient(180deg, #5a3a3a 0%, #3a1a1a 100%);
+    color: #fff;
+    box-shadow: inset 0 0 15px rgba(167,41,41,0.3);
+}
+
+.cancel-all-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.3);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--dota-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--dota-gold);
 }

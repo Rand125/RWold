@@ -4,30 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RWrldSuperGame</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Oswald:wght@300;400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="game-container">
+        <div id="custom-cursor"></div>
         <canvas id="gameCanvas"></canvas>
         <div id="ui-overlay">
             <button id="regen-btn" onclick="regenerateWorld()">
                 <span id="regen-progress"></span>
                 <span id="regen-text">Regen World</span>
             </button>
-            <div id="top-bar">
-                <div id="resources">
-                    Silver: <span id="silver-count">0</span>
-                    <div class="stone-container">
-                        Stone: <span id="stone-count">0</span>
-                        <span id="stone-gain" class="resource-gain"></span>
-                    </div>
-                    <div class="wood-container">
-                        Wood: <span id="wood-count">0</span>
-                        <span id="wood-gain" class="resource-gain"></span>
-                    </div>
-                    Food: <span id="food-count">10</span>
+            <div id="action-panel">
+                <div class="action-panel-header">
+                    <span class="panel-title">Очередь задач</span>
                 </div>
-                <div id="time">Day 1, 08:00</div>
+                <div id="action-list" class="action-list"></div>
+                <button id="cancel-all-btn" class="cancel-all-btn" onclick="cancelAllTasks()">Завершение всей работы</button>
+            </div>
+            <div id="top-bar">
+                <div class="hud-left">
+                    <div id="resources">
+                        <div class="res-item silver">
+                            <span class="res-icon">🪙</span> <span id="silver-count">0</span>
+                        </div>
+                        <div class="res-item stone stone-container">
+                            <span class="res-icon">🪨</span> <span id="stone-count">0</span>
+                            <span id="stone-gain" class="resource-gain"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="hud-center">
+                    <div id="time-container">
+                        <div class="time-icons-wrapper">
+                            <span id="time-icon-sun" class="time-icon active">☀️</span>
+                            <span id="time-icon-moon" class="time-icon">🌙</span>
+                        </div>
+                        <div id="time">Day 1, 08:00</div>
+                    </div>
+                </div>
+
+                <div class="hud-right">
+                    <div id="resources-right">
+                        <div class="res-item wood wood-container">
+                            <span class="res-icon">🪵</span> <span id="wood-count">0</span>
+                            <span id="wood-gain" class="resource-gain"></span>
+                        </div>
+                        <div class="res-item gold gold-container">
+                            <span class="res-icon">✨</span> <span id="gold-count">0</span>
+                            <span id="gold-gain" class="resource-gain"></span>
+                        </div>
+                        <div class="res-item food">
+                            <span class="res-icon">🍞</span> <span id="food-count">10</span>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="bottom-menu">
                 <button onclick="setOrder('architect')">Architect</button>
@@ -61,8 +96,14 @@
                 </div>
             </div>
             <div id="inspect-panel" class="hidden">
-                <h3 id="inspect-title">Colonist</h3>
+                <div class="inspect-header">
+                    <h3 id="inspect-title">Colonist</h3>
+                    <button id="minimize-btn" class="minimize-btn" onclick="toggleInspectPanel()">-</button>
+                </div>
                 <div id="inspect-content"></div>
+            </div>
+            <div id="inspect-widget" class="hidden">
+                <div class="widget-avatar" id="widget-avatar">👤</div>
             </div>
             <div id="debug-time-panel" class="hidden">
                 <label for="time-slider">Debug Time:</label>
