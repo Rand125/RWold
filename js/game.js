@@ -1482,27 +1482,96 @@ window.addEventListener('mousedown', (e) => {
             }
         }
     } else if (e.button === 2) {
+        const worldPos = screenToWorld(e.clientX, e.clientY);
+        const tx = Math.floor(worldPos.x / state.map.tileSize);
+        const ty = Math.floor(worldPos.y / state.map.tileSize);
+        
+        if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
+            const tile = state.map.tiles[ty][tx];
+            let job = null;
+            
+            // Проверка: дерево? Создаём задачу на срубку
+            if (tile.type === TILE_TYPES.TREE) {
+                const existingJob = state.jobs.find(j => j.type === 'chop' && j.x === tx && j.y === ty);
+                if (!existingJob) {
+                    job = { id: state.nextJobId++, type: 'chop', x: tx, y: ty, progress: 0, assigned: false };
+                }
+            }
+            // Проверка: камень/руда? Создаём задачу на добычу
+            else if (tile.type === TILE_TYPES.STONE || tile.type === TILE_TYPES.GOLD_ORE || 
+                     tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
+                const existingJob = state.jobs.find(j => j.type === 'mine' && j.x === tx && j.y === ty);
+                if (!existingJob) {
+                    let resource;
+                    if (tile.type === TILE_TYPES.GOLD_ORE) {
+                        resource = 'gold';
+                    } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
+                        resource = 'mountain';
+                    } else {
+                        resource = 'stone';
+                    }
+                    job = { id: state.nextJobId++, type: 'mine', x: tx, y: ty, progress: 0, assigned: false, resource: resource };
+                }
+            }
+            
+            if (job) {
+                state.jobs.push(job);
+                
+                // Определяем, какие персонажи будут выполнять
+                let charactersToAssign = [];
+                if (state.selectedEntities.length > 0) {
+                    charactersToAssign = [...state.selectedEntities];
+                } else {
+                    // Ищем ближайшего свободного персонажа к клику
+                    let closestEnt = null;
+                    let closestDist = Infinity;
+                    const clickX = tx + 0.5;
+                    const clickY = ty + 0.5;
+                    state.entities.forEach(ent => {
+                        if (!ent.job && !ent.status) {
+                            const dx = ent.x - clickX;
+                            const dy = ent.y - clickY;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < closestDist) {
+                                closestDist = dist;
+                                closestEnt = ent;
+                            }
+                        }
+                    });
+                    if (closestEnt) {
+                        charactersToAssign.push(closestEnt);
+                    }
+                }
+                
+                // Назначаем задачи
+                charactersToAssign.forEach(ent => {
+                    if (!ent.taskQueue) ent.taskQueue = [];
+                    if (!ent.job) {
+                        assignJobToEntity(ent, job);
+                    } else {
+                        ent.taskQueue.push(job);
+                    }
+                });
+                
+                updateActionPanel();
+                return;
+            }
+        }
+        
+        // Если не было задачи, делаем обычное движение
         if (state.selectedEntities.length > 0) {
-            const worldPos = screenToWorld(e.clientX, e.clientY);
-            const tx = Math.floor(worldPos.x / state.map.tileSize);
-            const ty = Math.floor(worldPos.y / state.map.tileSize);
             if (isWalkable(tx, ty)) {
                 const assignedTiles = new Set();
                 state.selectedEntities.forEach(ent => {
-                    // Unassign current job from state.jobs
                     if (ent.job) {
                         ent.job.assigned = false;
                         ent.job = null;
                     }
-                    // Clear task queue
                     if (ent.taskQueue) {
-                        ent.taskQueue.forEach(job => {
-                            job.assigned = false;
-                        });
+                        ent.taskQueue.forEach(job => job.assigned = false);
                         ent.taskQueue = [];
                     }
 
-                    // Find nearest free tile to avoid overlapping
                     let targetX = tx;
                     let targetY = ty;
                     
@@ -1524,7 +1593,6 @@ window.addEventListener('mousedown', (e) => {
                     }
                     assignedTiles.add(`${targetX},${targetY}`);
 
-                    // Move
                     if (isPathClearOfWater(ent.x, ent.y, targetX, targetY)) {
                         ent.path = [{ x: targetX + 0.5, y: targetY + 0.5 }]; ent.target = ent.path[0]; ent.isManualMove = true;
                     } else {
@@ -2602,7 +2670,7 @@ function updateActionPanel() {
                     <div class="action-character">${ent.name}</div>
                     <div class="action-status">${getJobTypeName(ent.job)} (${Math.floor(ent.job.progress)}%)</div>
                 </div>
-                <button class="cancel-task-btn" onclick="cancelTask(${ent.id}, ${ent.job.id})">✕</button>
+                <button class="cancel-task-btn" data-job-id="${ent.job.id}" data-entity-id="${ent.id}">✕</button>
             </div>`;
         }
 
@@ -2615,7 +2683,7 @@ function updateActionPanel() {
                         <div class="action-character">${ent.name}</div>
                         <div class="action-status">${getJobTypeName(job)} (Ожидание...)</div>
                     </div>
-                    <button class="cancel-task-btn" onclick="cancelTask(${ent.id}, ${job.id})">✕</button>
+                    <button class="cancel-task-btn" data-job-id="${job.id}" data-entity-id="${ent.id}">✕</button>
                 </div>`;
             });
         }
@@ -2623,14 +2691,31 @@ function updateActionPanel() {
 
     actionList.innerHTML = html;
     cancelAllBtn.disabled = !hasTasks;
+    
+    // Add event listeners
+    const cancelBtns = actionList.querySelectorAll('.cancel-task-btn');
+    cancelBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const entityId = parseInt(btn.dataset.entityId);
+            const jobId = parseInt(btn.dataset.jobId);
+            console.log('Cancel clicked:', entityId, jobId);
+            cancelTask(entityId, jobId);
+        });
+    });
 }
 
 window.cancelTask = function(entityId, jobId) {
+    console.log('cancelTask called with:', entityId, jobId);
     const ent = state.entities.find(e => e.id === entityId);
-    if (!ent) return;
+    if (!ent) {
+        console.log('Entity not found!');
+        return;
+    }
 
     // Check if it's the current job
     if (ent.job && ent.job.id === jobId) {
+        console.log('Canceling current job:', ent.job);
         // Remove from state.jobs
         state.jobs = state.jobs.filter(j => j.id !== jobId);
         
@@ -2646,20 +2731,25 @@ window.cancelTask = function(entityId, jobId) {
             updateResourceUI();
         }
 
-        // Clear job and target
+        // Clear job, status, target and manual move
+        ent.job.assigned = false;
         ent.job = null;
+        ent.status = null;
         ent.target = null;
         ent.path = [];
+        ent.isManualMove = false;
 
         // Assign next task from queue
         if (ent.taskQueue && ent.taskQueue.length > 0) {
             const nextJob = ent.taskQueue.shift();
+            console.log('Assigning next job from queue:', nextJob);
             assignJobToEntity(ent, nextJob);
         }
     } else if (ent.taskQueue) {
         // Remove from task queue
         const queueIndex = ent.taskQueue.findIndex(j => j.id === jobId);
         if (queueIndex !== -1) {
+            console.log('Canceling queued job at index:', queueIndex);
             const removedJob = ent.taskQueue.splice(queueIndex, 1)[0];
             // Remove from state.jobs
             state.jobs = state.jobs.filter(j => j.id !== jobId);
@@ -2681,6 +2771,7 @@ window.cancelTask = function(entityId, jobId) {
         }
     }
 
+    console.log('Updating action panel...');
     updateActionPanel();
 };
 
@@ -2699,8 +2790,10 @@ window.cancelAllTasks = function() {
 
             ent.job.assigned = false;
             ent.job = null;
+            ent.status = null;
             ent.target = null;
             ent.path = [];
+            ent.isManualMove = false;
         }
 
         // Clear task queue
