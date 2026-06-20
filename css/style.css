@@ -34,23 +34,7 @@ body, html {
 
 /* Ensure all elements also hide default cursor */
 * {
-    cursor: none !important;#custom-cursor {
-    position: fixed;
-    pointer-events: none;
-    z-index: 99999;
-    width: 42px;
-    height: 42px;
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
-    background-position: center;
-    /* Improve quality for high-DPI displays */
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-    -webkit-transform: translate(-10px, -10px) translateZ(0);
-    transform: translate(-10px, -10px) translateZ(0); /* <- это смещение курсора (хотпоинт) */
-    image-rendering: auto;
-    display: none;
-}
+    cursor: none !important;
 }
 
 #game-container {
@@ -143,30 +127,7 @@ body, html {
     opacity: 0;
 }
 
-.stone-container, .wood-container, .gold-container {
-    position: relative;
-}
 
-.resource-gain {
-    position: absolute;
-    left: 50%;
-    top: -5px;
-    transform: translateX(-50%);
-    color: #ffffff;
-    font-weight: 700;
-    font-size: 18px;
-    opacity: 0;
-    white-space: nowrap;
-    text-shadow: 0 0 10px var(--dota-gold-bright), 0 0 20px rgba(229, 193, 111, 0.3);
-    animation: stoneSlide 1.2s ease-out forwards;
-}
-
-@keyframes stoneSlide {
-    0% { opacity: 0; transform: translateX(-50%) translateY(0) scale(0.9); }
-    20% { opacity: 1; transform: translateX(-50%) translateY(-20px) scale(1.05); }
-    80% { opacity: 1; transform: translateX(-50%) translateY(-25px) scale(1); }
-    100% { opacity: 0; transform: translateX(-50%) translateY(-40px) scale(0.9); }
-}
 
 #ui-overlay.ui-hidden #character-menu {
     transform: translate(100px, 100px);
@@ -291,10 +252,32 @@ body, html {
     letter-spacing: 0.5px;
 }
 
-#silver-count { color: #e5c16f !important; }
-#stone-count { color: #aaa !important; }
-#wood-count { color: #a67c52 !important; }
-#food-count { color: #81c784 !important; }
+/* Counter styles like slot machines */
+.counter-container {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    height: 26px;
+}
+
+.counter-digit {
+    font-family: var(--dota-font-main);
+    font-weight: 700;
+    font-size: 18px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    display: inline-block;
+    min-width: 14px;
+    text-align: center;
+    line-height: 26px;
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Colors for resources */
+#silver-count .counter-digit { color: #e5c16f !important; }
+#stone-count .counter-digit { color: #aaa !important; }
+#wood-count .counter-digit { color: #a67c52 !important; }
+#gold-count .counter-digit { color: #FFD700 !important; }
+#food-count .counter-digit { color: #81c784 !important; }
 
 #time-container {
     display: flex;

@@ -30,6 +30,13 @@ const state = {
         food: 10,
         gold: 0 // Добавляем золото
     },
+    prevResources: {
+        silver: 0,
+        stone: 0,
+        wood: 0,
+        food: 10,
+        gold: 0
+    },
     entities: [],
     jobs: [],
     time: {
@@ -64,7 +71,6 @@ const state = {
         endX: 0,
         endY: 0
     },
-    isWorkPaused: false,
     keys: {},
     keyPressTime: {},
 };
@@ -137,12 +143,93 @@ const Noise = {
 };
 Noise.init();
 
+// Обновляет счётчик ресурса с анимацией
+function updateCounter(containerId, newValue, oldValue) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // Преобразуем в строки
+    const newStr = newValue.toString();
+    const oldStr = oldValue.toString();
+    
+    // Определяем максимальную длину
+    const maxLength = Math.max(newStr.length, oldStr.length);
+    
+    // Дополняем нулями слева
+    const newPadded = newStr.padStart(maxLength, '0');
+    const oldPadded = oldStr.padStart(maxLength, '0');
+    
+    // Очищаем контейнер
+    container.innerHTML = '';
+    
+    // Создаём цифры
+    for (let i = 0; i < maxLength; i++) {
+        const digitEl = document.createElement('div');
+        digitEl.className = 'counter-digit';
+        digitEl.dataset.target = newPadded[i];
+        digitEl.dataset.current = oldPadded[i];
+        digitEl.textContent = oldPadded[i];
+        
+        if (newPadded[i] !== oldPadded[i]) {
+            // Запускаем анимацию только если цифра изменилась
+            animateDigitElement(digitEl, parseInt(oldPadded[i]), parseInt(newPadded[i]));
+        }
+        
+        container.appendChild(digitEl);
+    }
+}
+
+// Анимирует отдельную цифру
+function animateDigitElement(el, from, to) {
+    // Защита от повторных запусков
+    if (el.dataset.animating === 'true') {
+        el.textContent = el.dataset.target || to;
+        return;
+    }
+    el.dataset.animating = 'true';
+    
+    const duration = 2000; // 2 секунды
+    const framesPerSecond = 25;
+    const totalFrames = Math.floor(duration / (1000 / framesPerSecond));
+    let frame = 0;
+    
+    const animateFrame = () => {
+        frame++;
+        
+        if (frame < totalFrames) {
+            // Случайная цифра для эффекта перекручивания
+            el.textContent = Math.floor(Math.random() * 10);
+            
+            // Маленький эффект покачивания
+            el.style.transform = `translateY(${(frame % 2 === 0 ? -2 : 2)}px)`;
+            
+            // Следующий кадр
+            requestAnimationFrame(animateFrame);
+        } else {
+            // Финальная цифра
+            el.textContent = el.dataset.target || to;
+            el.style.transform = 'translateY(0)';
+            el.dataset.animating = 'false';
+        }
+    };
+    
+    // Запускаем анимацию
+    requestAnimationFrame(animateFrame);
+}
+
 function updateResourceUI() {
-    document.getElementById('silver-count').textContent = state.resources.silver;
-    document.getElementById('stone-count').textContent = state.resources.stone;
-    document.getElementById('wood-count').textContent = state.resources.wood;
-    document.getElementById('food-count').textContent = state.resources.food;
-    document.getElementById('gold-count').textContent = state.resources.gold; // Добавляем золото
+    updateCounter('silver-count', state.resources.silver, state.prevResources.silver);
+    updateCounter('stone-count', state.resources.stone, state.prevResources.stone);
+    updateCounter('wood-count', state.resources.wood, state.prevResources.wood);
+    updateCounter('food-count', state.resources.food, state.prevResources.food);
+    updateCounter('gold-count', state.resources.gold, state.prevResources.gold);
+    
+    // Обновляем предыдущие значения
+    state.prevResources.silver = state.resources.silver;
+    state.prevResources.stone = state.resources.stone;
+    state.prevResources.wood = state.resources.wood;
+    state.prevResources.food = state.resources.food;
+    state.prevResources.gold = state.resources.gold;
 }
 
 function updateCharacterMenu() {
@@ -1101,11 +1188,8 @@ function drawFogOfWar() {
 }
 
 function isTileOccupied(tx, ty, excludeEnt) {
-    return state.entities.some(ent => 
-        ent !== excludeEnt && 
-        Math.floor(ent.x) === tx && 
-        Math.floor(ent.y) === ty
-    );
+    // Персонажи могут проходить через друг друга
+    return false;
 }
 
 function isWalkable(tx, ty) {
@@ -1741,48 +1825,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function toggleUI() { document.getElementById('ui-overlay').classList.toggle('ui-hidden'); }
 
-function showStoneGain(amount) {
-    const stoneGainEl = document.getElementById('stone-gain');
-    
-    // Удаляем старую анимацию
-    stoneGainEl.style.animation = 'none';
-    stoneGainEl.offsetHeight; // Триггер reflow
-    
-    // Устанавливаем текст
-    stoneGainEl.innerText = `+${amount}`;
-    
-    // Запускаем новую анимацию
-    stoneGainEl.style.animation = 'stoneSlide 1.2s ease-out forwards';
-}
-
-function showWoodGain(amount) {
-    const woodGainEl = document.getElementById('wood-gain');
-    
-    // Удаляем старую анимацию
-    woodGainEl.style.animation = 'none';
-    woodGainEl.offsetHeight; // Триггер reflow
-    
-    // Устанавливаем текст
-    woodGainEl.innerText = `+${amount}`;
-    
-    // Запускаем новую анимацию
-    woodGainEl.style.animation = 'stoneSlide 1.2s ease-out forwards';
-}
-
-function showGoldGain(amount) {
-    const goldGainEl = document.getElementById('gold-gain');
-    
-    // Удаляем старую анимацию
-    goldGainEl.style.animation = 'none';
-    goldGainEl.offsetHeight; // Триггер reflow
-    
-    // Устанавливаем текст
-    goldGainEl.innerText = `+${amount}`;
-    
-    // Запускаем новую анимацию
-    goldGainEl.style.animation = 'stoneSlide 1.2s ease-out forwards';
-}
-
 function toggleFogOfWar() {
     state.map.fogOfWarEnabled = !state.map.fogOfWarEnabled;
 }
@@ -1835,7 +1877,7 @@ window.addEventListener('mousemove', (e) => {
     
     if (isOverUI) {
         // Select cursor for UI/buttons
-        customCursor.style.backgroundImage = 'url(select.png)';
+        customCursor.style.backgroundImage = 'url(assets/select.png)';
         customCursor.classList.add('cursor-select');
         customCursor.style.display = 'block';
     } else if (isOverCanvas) {
@@ -1848,19 +1890,19 @@ window.addEventListener('mousemove', (e) => {
             
             if (tile.type === TILE_TYPES.TREE) {
                 // Chop cursor for trees
-                customCursor.style.backgroundImage = 'url(chop.png)';
+                customCursor.style.backgroundImage = 'url(assets/chop.png)';
                 customCursor.classList.add('cursor-chop');
                 customCursor.style.display = 'block';
             } else if (tile.type === TILE_TYPES.STONE || tile.type === TILE_TYPES.GOLD_ORE || 
                        tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK || 
                        tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
                 // Mine cursor for stones/ores
-                customCursor.style.backgroundImage = 'url(mine.png)';
+                customCursor.style.backgroundImage = 'url(assets/mine.png)';
                 customCursor.classList.add('cursor-mine');
                 customCursor.style.display = 'block';
             } else {
                 // Default cursor
-                customCursor.style.backgroundImage = 'url(cursor.png)';
+                customCursor.style.backgroundImage = 'url(assets/cursor.png)';
                 customCursor.classList.add('cursor-default');
                 customCursor.style.display = 'block';
             }
@@ -2004,6 +2046,8 @@ window.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 function assignJobToEntity(ent, job) {
+    if (!job) return;
+    
     if (ent.job) {
         // If the job is build/destruct, unassign it
         if (ent.job.type === 'build_wall' || ent.job.type === 'build_wood_wall' || ent.job.type === 'build_bridge' || ent.job.type === 'destruct') {
@@ -2055,7 +2099,7 @@ function update() {
             ent.needs.food = Math.min(100, ent.needs.food + 0.5);
             if (ent.needs.food >= 100) ent.status = null;
         }
-        if (ent.status === 'sleeping' || ent.status === 'eating' || state.isWorkPaused) {
+        if (ent.status === 'sleeping' || ent.status === 'eating') {
             if (state.selectedEntities.includes(ent)) updateInspectPanel(ent);
             return;
         }
@@ -2104,6 +2148,9 @@ function update() {
                 ent.x = nextX; ent.y = nextY;
             }
         } else if (ent.job) {
+                // Проверяем, что job ещё существует и не null
+                if (!ent.job) return;
+                
                 // Check distance to job (allow working within 1 cell)
                 const dx = (ent.job.x + 0.5) - ent.x; 
                 const dy = (ent.job.y + 0.5) - ent.y;
@@ -2125,7 +2172,11 @@ function update() {
                     
                     // Calculate mining speed based on tile type
                     let miningSpeed = 0.5 * workerBonus;
-                    const tile = state.map.tiles[job.y][job.x];
+                    
+                    // Проверка, что job ещё существует перед доступом к его свойствам
+                    if (!ent.job) return;
+                    
+                    const tile = state.map.tiles[ent.job.y][ent.job.x];
                     if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
                         miningSpeed /= 10; // Mountain rock/snow is 10x slower
                     }
@@ -2146,24 +2197,19 @@ function update() {
                                 const stoneFromGoldGain = Math.floor(Math.random() * 8) + 10; // 10-17 stone
                                 state.resources.gold += goldGain; 
                                 state.resources.stone += stoneFromGoldGain;
-                                showGoldGain(goldGain);
-                                showStoneGain(stoneFromGoldGain);
                             } else if (job.resource === 'mountain') {
                                 // Mountain rock gives stone + small chance of gold
                                 const stoneGain = Math.floor(Math.random() * 10) + 50;
                                 state.resources.stone += stoneGain;
-                                showStoneGain(stoneGain);
                                 // 8% chance to get gold from mountain rock (less than gold ore)
                                 if (Math.random() < 0.08) {
                                     const goldGain = Math.floor(Math.random() * 3) + 2; // Less gold than gold ore
                                     state.resources.gold += goldGain;
-                                    showGoldGain(goldGain);
                                 }
                             } else {
                                 // Regular stone gives more stone
                                 const stoneGain = Math.floor(Math.random() * 16) + 81;
                                 state.resources.stone += stoneGain; 
-                                showStoneGain(stoneGain);
                             }
                             updateResourceUI(); 
                         }
@@ -2171,7 +2217,6 @@ function update() {
                             state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
                             const woodGain = Math.floor(Math.random() * 16) + 81;
                             state.resources.wood += woodGain;
-                            showWoodGain(woodGain);
                             updateResourceUI();
                         }
                         else if (job.type === 'destruct') {
@@ -2197,14 +2242,16 @@ function update() {
                                 // Assign next task from queue for each
                                 if (e.taskQueue && e.taskQueue.length > 0) {
                                     const nextJob = e.taskQueue.shift();
-                                    assignJobToEntity(e, nextJob);
+                                    if (nextJob) {
+                                        assignJobToEntity(e, nextJob);
+                                    }
                                 }
                             }
                         });
                         
                         updateActionPanel();
                     }
-                } else if (!ent.target) assignJobToEntity(ent, ent.job);
+                } else if (!ent.target && ent.job) assignJobToEntity(ent, ent.job);
             } else if (Math.random() < 0.005) {
             let tx, ty;
             if (Math.random() < 0.7) {
@@ -2470,14 +2517,6 @@ window.regenerateWorld = function() {
 };
 window.setOrder = function(type) {
     state.lastPaintedTile = null; // Reset when order changes
-    if (type === 'work') {
-        state.isWorkPaused = !state.isWorkPaused;
-        const buttons = document.querySelectorAll('#bottom-menu button');
-        buttons.forEach(btn => {
-            if (btn.innerText === 'Work') btn.style.background = state.isWorkPaused ? '#8B0000' : '#333';
-        });
-        return;
-    }
 
     if (type === 'architect') {
         // Toggle architect menu
@@ -2496,7 +2535,7 @@ window.setOrder = function(type) {
         else state.currentOrder = type;
     }
     
-    const orderNames = { 'architect': 'Architect', 'unarchitect': 'Destruct', 'chop': 'Chop', 'mine': 'Mine', 'work': 'Work' };
+    const orderNames = { 'architect': 'Architect', 'unarchitect': 'Destruct', 'chop': 'Chop', 'mine': 'Mine' };
     const buttons = document.querySelectorAll('#bottom-menu button');
     buttons.forEach(btn => {
         if (orderNames[type] === btn.innerText) btn.style.background = state.currentOrder === type ? '#555' : '#333';
@@ -2688,6 +2727,30 @@ window.cancelAllTasks = function() {
 };
 
 window.addEventListener('resize', resize);
-resize(); initMap(); initEntities(); updateResourceUI(); 
+resize(); initMap(); initEntities();
+// Инициализируем предыдущие значения
+state.prevResources = {
+    silver: state.resources.silver,
+    stone: state.resources.stone,
+    wood: state.resources.wood,
+    food: state.resources.food,
+    gold: state.resources.gold
+};
+// Заполняем контейнеры без анимации
+['silver', 'stone', 'wood', 'gold', 'food'].forEach(name => {
+    const containerId = `${name}-count`;
+    const container = document.getElementById(containerId);
+    if (container) {
+        const value = state.resources[name] || 0;
+        const valueStr = value.toString();
+        container.innerHTML = '';
+        for (let i = 0; i < valueStr.length; i++) {
+            const digitEl = document.createElement('div');
+            digitEl.className = 'counter-digit';
+            digitEl.textContent = valueStr[i];
+            container.appendChild(digitEl);
+        }
+    }
+});
 state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 requestAnimationFrame(render);
