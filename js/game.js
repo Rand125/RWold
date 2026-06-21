@@ -1,8 +1,8 @@
-// ===== ИНИЦИАЛИЗАЦИЯ CANVAS =====
+// инициализация canvas
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// ===== СОСТОЯНИЕ ИГРЫ =====
+// состояние игры
 const state = {
     camera: {
         x: -1616,
@@ -92,7 +92,7 @@ const state = {
     }
 };
 
-// ===== ТИПЫ ТАЙЛОВ =====
+// типы тайлов
 const TILE_TYPES = {
     GRASS: { color: 'rgb(95, 94, 40)', name: 'Grass', moveCost: 1 },
     LIGHT_GRASS: { color: 'rgb(125, 124, 60)', name: 'Light Grass', moveCost: 1 },
@@ -118,7 +118,7 @@ const TILE_TYPES = {
     DUNGEON_WALL: { color: '#2a1e12', name: 'Dungeon Wall', solid: true }
 };
 
-// ===== ШУМ (NOISE) =====
+// шум (noise)
 const Noise = {
     p: new Uint8Array(512),
     init() {
@@ -168,7 +168,7 @@ const Noise = {
 };
 Noise.init();
 
-// ===== UI: РЕСУРСЫ И МЕНЮ =====
+// ui: ресурсы и меню
 // Обновляет счётчик ресурса с анимацией
 function updateCounter(containerId, newValue, oldValue) {
     const container = document.getElementById(containerId);
@@ -272,10 +272,10 @@ function updateCharacterMenu() {
         };
         card.innerHTML = `<div class="character-avatar" style="background: ${ent.color}">👤</div><div class="character-name">${ent.name}</div>`;
         list.appendChild(card);
-    });}
+    });
 }
 
-// ===== ГЕНЕРАЦИЯ КАРТЫ =====
+// генерация карты
 function initMap() {
     state.map.tiles = [];
     state.map.explored = new Uint8Array(state.map.width * state.map.height);
@@ -709,7 +709,7 @@ function initMap() {
     state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 }
 
-// ===== СОХРАНЕНИЕ КАРТЫ =====
+// сохранение карты
 function saveCurrentMap() {
     // Сохраняем текущее состояние карты
     const savedMap = {
@@ -729,7 +729,7 @@ function saveCurrentMap() {
     }
 }
 
-// ===== ГЕНЕРАЦИЯ ДАНЖЕНА =====
+// генерация данжена
 function generateDungeon() {
     // Initialize entire cave as cave floor first
     for (let y = 0; y < state.map.height; y++) {
@@ -875,7 +875,7 @@ function generateDungeon() {
     }
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ ПЕЩЕРЫ =====
+// инициализация карты пещеры
 function initCaveMap() {
     state.map.tiles = [];
     state.map.explored = new Uint8Array(state.map.width * state.map.height);
@@ -992,10 +992,10 @@ function initCaveMap() {
         height: state.map.height,
         dungeonEntrance: {x: dungeonEntranceX, y: dungeonEntranceY},
         enemies: JSON.parse(JSON.stringify(state.enemies))
-    };}
+    };
 }
 
-// ===== ОТРИСОВКА: ПОМОЩНИКИ =====
+// отрисовка: помощники
 function getWaterColor(dist) {
     if (dist < 3) return '#29b6f6';
     if (dist < 8) {
@@ -1583,7 +1583,7 @@ function updateChunk(chunk) {
     chunk.dirty = false;
 }
 
-// ===== ОБНОВЛЕНИЕ ЧАНКОВ =====
+// обновление чанков
 function markTileDirty(tx, ty) {
     const cx = Math.floor(tx / state.map.chunkSize);
     const cy = Math.floor(ty / state.map.chunkSize);
@@ -1599,7 +1599,7 @@ function markTileDirty(tx, ty) {
     }
 }
 
-// ===== ТУМАН ВОЙНЫ =====
+// туман войны
 function drawFogOfWar() {
     const ts = state.map.tileSize;
     const visionRadiusPx = state.map.visionRadius * ts * 1.2; 
@@ -2469,7 +2469,7 @@ function handleCaveInteraction() {
     }
 }
 
-// ===== Клавиатурные сокращения =====
+// клавиатурные сокращения
 window.addEventListener('keydown', (e) => {
     state.keys[e.code] = true;
     if (!state.keyPressTime[e.code]) state.keyPressTime[e.code] = Date.now();
@@ -2585,7 +2585,7 @@ window.addEventListener('mousemove', (e) => {
     // Reset all cursor classes
     customCursor.classList.remove('cursor-default', 'cursor-select', 'cursor-chop', 'cursor-mine', 'cursor-attack');
     
-    // ===== Логика курсора =====
+    // логика курсора
     if (state.combat.attackMode && !isOverUI) {
         // Курсор атаки (меч)
         customCursor.textContent = ''; // Очищаем текст, используем изображение
