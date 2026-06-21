@@ -1,6 +1,8 @@
+// ===== ИНИЦИАЛИЗАЦИЯ CANVAS =====
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// ===== СОСТОЯНИЕ ИГРЫ =====
 const state = {
     camera: {
         x: -1616,
@@ -23,6 +25,10 @@ const state = {
         visionRadius: 20,
         fogOfWarEnabled: true
     },
+    overworldMap: null, // Сохраненное состояние внешнего мира
+    caveMap: null, // Сохраненное состояние пещеры
+    currentMap: 'overworld', // 'overworld' или 'cave'
+    caveEntrance: null, // Координаты входа в пещеру (для выхода обратно)
     resources: {
         silver: 0,
         stone: 0,
@@ -38,6 +44,7 @@ const state = {
         gold: 0
     },
     entities: [],
+    enemies: [], // Новый массив для врагов (скелетов)
     jobs: [],
     time: {
         day: 1,
@@ -73,8 +80,19 @@ const state = {
     },
     keys: {},
     keyPressTime: {},
+    combat: {
+        attackMode: false,
+        lastAttackTime: 0,
+        attackCooldown: 1000 // 1 секунда
+    },
+    player: {
+        hp: 100,
+        maxHp: 100,
+        attack: 15
+    }
 };
 
+// ===== ТИПЫ ТАЙЛОВ =====
 const TILE_TYPES = {
     GRASS: { color: 'rgb(95, 94, 40)', name: 'Grass', moveCost: 1 },
     LIGHT_GRASS: { color: 'rgb(125, 124, 60)', name: 'Light Grass', moveCost: 1 },
@@ -91,9 +109,16 @@ const TILE_TYPES = {
     WALL: { color: '#424242', name: 'Wall', solid: true },
     WOOD_WALL: { color: '#8B4513', name: 'Wooden Wall', solid: true },
     TREE: { color: 'rgb(95, 94, 40)', name: 'Tree', solid: true, harvestable: 'wood' },
-    BRIDGE: { color: '#8B4513', name: 'Bridge', moveCost: 1.5 }
+    BRIDGE: { color: '#8B4513', name: 'Bridge', moveCost: 1.5 },
+    CAVE_ENTRANCE: { color: '#1a1a1a', name: 'Cave Entrance', moveCost: 1.5 }, // Темный вход
+    CAVE_EXIT: { color: '#fffacd', name: 'Cave Exit', moveCost: 1.5 }, // Светлый выход
+    CAVE_FLOOR: { color: '#2d2d2d', name: 'Cave Floor', moveCost: 1 },
+    CAVE_WALL: { color: '#1a1a1a', name: 'Cave Wall', solid: true },
+    DUNGEON_FLOOR: { color: '#4a3c2e', name: 'Dungeon Floor', moveCost: 1 },
+    DUNGEON_WALL: { color: '#2a1e12', name: 'Dungeon Wall', solid: true }
 };
 
+// ===== ШУМ (NOISE) =====
 const Noise = {
     p: new Uint8Array(512),
     init() {
@@ -143,6 +168,7 @@ const Noise = {
 };
 Noise.init();
 
+// ===== UI: РЕСУРСЫ И МЕНЮ =====
 // Обновляет счётчик ресурса с анимацией
 function updateCounter(containerId, newValue, oldValue) {
     const container = document.getElementById(containerId);
@@ -246,9 +272,10 @@ function updateCharacterMenu() {
         };
         card.innerHTML = `<div class="character-avatar" style="background: ${ent.color}">👤</div><div class="character-name">${ent.name}</div>`;
         list.appendChild(card);
-    });
+    });}
 }
 
+// ===== ГЕНЕРАЦИЯ КАРТЫ =====
 function initMap() {
     state.map.tiles = [];
     state.map.explored = new Uint8Array(state.map.width * state.map.height);
@@ -619,9 +646,356 @@ function initMap() {
         }
     }
     
+    // Step 5: Add cave entrances
+    const numCaveEntrances = 3; // Добавляем 3 входа в пещеру
+    for (let i = 0; i < numCaveEntrances; i++) {
+        let placed = false;
+        let attempts = 0;
+        while (!placed && attempts < 10000) { // Увеличиваем количество попыток
+            const x = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+            const y = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+            const tile = state.map.tiles[y][x];
+            // Размещаем вход в пещеру на траве или земле
+            if ((tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || 
+                 tile.type === TILE_TYPES.LIGHT_GRASS || tile.type === TILE_TYPES.SOIL)) {
+                // Проверяем, есть ли гора НАПРЯМУЮ рядом (в соседних клетках)
+                let adjacentToMountain = false;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue; // Не проверяем саму клетку
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                            const neighbor = state.map.tiles[ny][nx];
+                            if (neighbor.type === TILE_TYPES.MOUNTAIN_ROCK || 
+                                neighbor.type === TILE_TYPES.MOUNTAIN_ROCK_DARK) {
+                                adjacentToMountain = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (adjacentToMountain) break;
+                }
+                if (adjacentToMountain) {
+                    state.map.tiles[y][x].type = TILE_TYPES.CAVE_ENTRANCE;
+                    // Очищаем место вокруг входа (чтобы не было деревьев)
+                    for (let dy = -2; dy <= 2; dy++) {
+                        for (let dx = -2; dx <= 2; dx++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                const neighbor = state.map.tiles[ny][nx];
+                                if (neighbor.type === TILE_TYPES.TREE) {
+                                    neighbor.type = TILE_TYPES.GRASS;
+                                }
+                            }
+                        }
+                    }
+                    placed = true;
+                }
+            }
+            attempts++;
+        }
+    }
+
+    state.currentMap = 'overworld';
+    state.overworldMap = {
+        tiles: JSON.parse(JSON.stringify(state.map.tiles)),
+        width: state.map.width,
+        height: state.map.height,
+        enemies: []
+    };
+    
     state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
 }
 
+// ===== СОХРАНЕНИЕ КАРТЫ =====
+function saveCurrentMap() {
+    // Сохраняем текущее состояние карты
+    const savedMap = {
+        tiles: JSON.parse(JSON.stringify(state.map.tiles)), // Глубокая копия тайлов
+        width: state.map.width,
+        height: state.map.height,
+        enemies: JSON.parse(JSON.stringify(state.enemies)) // Save enemies too!
+    };
+    if (state.currentMap === 'overworld') {
+        state.overworldMap = savedMap;
+    } else {
+        // Save dungeon entrance too!
+        if (state.caveMap && state.caveMap.dungeonEntrance) {
+            savedMap.dungeonEntrance = state.caveMap.dungeonEntrance;
+        }
+        state.caveMap = savedMap;
+    }
+}
+
+// ===== ГЕНЕРАЦИЯ ДАНЖЕНА =====
+function generateDungeon() {
+    // Initialize entire cave as cave floor first
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            state.map.tiles[y][x] = { type: TILE_TYPES.CAVE_FLOOR, x, y, elevation: 0, moisture: 0 };
+        }
+    }
+    
+    // Place some cave walls around the edges
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            if (x < 5 || x > state.map.width - 6 || y < 5 || y > state.map.height - 6) {
+                state.map.tiles[y][x].type = TILE_TYPES.CAVE_WALL;
+            }
+        }
+    }
+    
+    const rooms = [];
+    const roomCount = 5; // Fewer rooms so dungeon is smaller
+    const minRoomSize = 6; // Smaller room sizes
+    const maxRoomSize = 12;
+    
+    // Try to place rooms in a smaller area of the cave
+    const dungeonWidth = Math.floor(state.map.width * 0.6);
+    const dungeonHeight = Math.floor(state.map.height * 0.6);
+    const dungeonStartX = Math.floor((state.map.width - dungeonWidth) / 2);
+    const dungeonStartY = Math.floor((state.map.height - dungeonHeight) / 2);
+    
+    // Try to place rooms
+    for (let i = 0; i < roomCount; i++) {
+        const roomWidth = Math.floor(Math.random() * (maxRoomSize - minRoomSize)) + minRoomSize;
+        const roomHeight = Math.floor(Math.random() * (maxRoomSize - minRoomSize)) + minRoomSize;
+        const roomX = dungeonStartX + Math.floor(Math.random() * (dungeonWidth - roomWidth - 10)) + 5;
+        const roomY = dungeonStartY + Math.floor(Math.random() * (dungeonHeight - roomHeight - 10)) + 5;
+        
+        // Check if this room overlaps with any existing room
+        let overlaps = false;
+        for (const otherRoom of rooms) {
+            if (roomX < otherRoom.x + otherRoom.w + 2 &&
+                roomX + roomWidth + 2 > otherRoom.x &&
+                roomY < otherRoom.y + otherRoom.h + 2 &&
+                roomY + roomHeight + 2 > otherRoom.y) {
+                overlaps = true;
+                break;
+            }
+        }
+        
+        if (!overlaps) {
+            // Carve out the room with dungeon floor and walls
+            for (let dy = -1; dy <= roomHeight; dy++) {
+                for (let dx = -1; dx <= roomWidth; dx++) {
+                    const tx = roomX + dx;
+                    const ty = roomY + dy;
+                    if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
+                        if (dx < 0 || dx >= roomWidth || dy < 0 || dy >= roomHeight) {
+                            state.map.tiles[ty][tx].type = TILE_TYPES.DUNGEON_WALL;
+                        } else {
+                            state.map.tiles[ty][tx].type = TILE_TYPES.DUNGEON_FLOOR;
+                        }
+                    }
+                }
+            }
+            rooms.push({ x: roomX, y: roomY, w: roomWidth, h: roomHeight, centerX: roomX + Math.floor(roomWidth/2), centerY: roomY + Math.floor(roomHeight/2) });
+        }
+    }
+    
+    // Connect the rooms with narrow corridors (1 tile wide)
+    for (let i = 1; i < rooms.length; i++) {
+        const roomA = rooms[i - 1];
+        const roomB = rooms[i];
+        
+        // First move horizontally
+        const startX = roomA.centerX;
+        const startY = roomA.centerY;
+        const endX = roomB.centerX;
+        const endY = roomB.centerY;
+        
+        // Horizontal corridor (1 tile wide)
+        const minX = Math.min(startX, endX);
+        const maxX = Math.max(startX, endX);
+        for (let x = minX; x <= maxX; x++) {
+            if (state.map.tiles[startY][x].type !== TILE_TYPES.DUNGEON_FLOOR) {
+                state.map.tiles[startY][x].type = TILE_TYPES.DUNGEON_FLOOR;
+                // Add walls around the corridor
+                if (startY - 1 >= 0 && state.map.tiles[startY - 1][x].type === TILE_TYPES.CAVE_FLOOR) {
+                    state.map.tiles[startY - 1][x].type = TILE_TYPES.DUNGEON_WALL;
+                }
+                if (startY + 1 < state.map.height && state.map.tiles[startY + 1][x].type === TILE_TYPES.CAVE_FLOOR) {
+                    state.map.tiles[startY + 1][x].type = TILE_TYPES.DUNGEON_WALL;
+                }
+            }
+        }
+        
+        // Vertical corridor (1 tile wide)
+        const minY = Math.min(startY, endY);
+        const maxY = Math.max(startY, endY);
+        for (let y = minY; y <= maxY; y++) {
+            if (state.map.tiles[y][endX].type !== TILE_TYPES.DUNGEON_FLOOR) {
+                state.map.tiles[y][endX].type = TILE_TYPES.DUNGEON_FLOOR;
+                // Add walls around the corridor
+                if (endX - 1 >= 0 && state.map.tiles[y][endX - 1].type === TILE_TYPES.CAVE_FLOOR) {
+                    state.map.tiles[y][endX - 1].type = TILE_TYPES.DUNGEON_WALL;
+                }
+                if (endX + 1 < state.map.width && state.map.tiles[y][endX + 1].type === TILE_TYPES.CAVE_FLOOR) {
+                    state.map.tiles[y][endX + 1].type = TILE_TYPES.DUNGEON_WALL;
+                }
+            }
+        }
+    }
+    
+    // Place exit in first room
+    if (rooms.length > 0) {
+        state.map.tiles[rooms[0].centerY][rooms[0].centerX].type = TILE_TYPES.CAVE_EXIT;
+    }
+    
+    // Add some resources in dungeon
+    for (let i = 0; i < 20; i++) {
+        const rx = dungeonStartX + Math.floor(Math.random() * (dungeonWidth - 10)) + 5;
+        const ry = dungeonStartY + Math.floor(Math.random() * (dungeonHeight - 10)) + 5;
+        if (state.map.tiles[ry][rx].type === TILE_TYPES.DUNGEON_FLOOR) {
+            state.map.tiles[ry][rx].type = Math.random() < 0.3 ? TILE_TYPES.GOLD_ORE : TILE_TYPES.STONE;
+        }
+    }
+    
+    // Spawn skeletons in rooms (not the first one, which is exit room)
+    for (let i = 1; i < rooms.length; i++) {
+        const room = rooms[i];
+        const skeletonCount = Math.floor(Math.random() * 4) + 2; // 2-5 skeletons per room
+        for (let s = 0; s < skeletonCount; s++) {
+            const sx = room.x + Math.floor(Math.random() * (room.w - 2)) + 1;
+            const sy = room.y + Math.floor(Math.random() * (room.h - 2)) + 1;
+            state.enemies.push({
+                x: sx + 0.5,
+                y: sy + 0.5,
+                hp: 30,
+                maxHp: 30,
+                attack: 10,
+                detectionRadius: 8,
+                target: null,
+                lastAttackTime: 0
+            });
+        }
+    }
+}
+
+// ===== ИНИЦИАЛИЗАЦИЯ КАРТЫ ПЕЩЕРЫ =====
+function initCaveMap() {
+    state.map.tiles = [];
+    state.map.explored = new Uint8Array(state.map.width * state.map.height);
+    state.enemies = []; // Clear enemies first
+    
+    // Step 1: Initialize with random walls/floor (45% walls, 55% floor)
+    for (let y = 0; y < state.map.height; y++) {
+        const row = [];
+        for (let x = 0; x < state.map.width; x++) {
+            let type = TILE_TYPES.CAVE_FLOOR;
+            if (x < 3 || x > state.map.width -4 || y <3 || y > state.map.height -4) {
+                type = TILE_TYPES.CAVE_WALL;
+            } else if (Math.random() < 0.45) {
+                type = TILE_TYPES.CAVE_WALL;
+            }
+            row.push({ type, x, y, elevation: 0, moisture: 0 });
+        }
+        state.map.tiles.push(row);
+    }
+    
+    // Step 2: Run cellular automata (4-5 rule) for 5 iterations to make it organic
+    for (let i = 0; i < 5; i++) {
+        const newTiles = JSON.parse(JSON.stringify(state.map.tiles)); // Deep copy
+        
+        for (let y = 1; y < state.map.height - 1; y++) {
+            for (let x = 1; x < state.map.width - 1; x++) {
+                // Count number of surrounding walls (including diagonals)
+                let wallCount = 0;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const ny = y + dy;
+                        const nx = x + dx;
+                        if (state.map.tiles[ny][nx].type === TILE_TYPES.CAVE_WALL) {
+                            wallCount++;
+                        }
+                    }
+                }
+                
+                // Rule: If a tile has >=5 walls nearby, it becomes a wall; if <=4, it becomes floor
+                if (wallCount >= 5) {
+                    newTiles[y][x].type = TILE_TYPES.CAVE_WALL;
+                } else if (wallCount <= 4) {
+                    newTiles[y][x].type = TILE_TYPES.CAVE_FLOOR;
+                }
+            }
+        }
+        
+        state.map.tiles = newTiles;
+    }
+    
+    // Add ores to cave
+    for (let y = 5; y < state.map.height -5; y++) {
+        for (let x =5; x < state.map.width -5; x++) {
+            if (state.map.tiles[y][x].type === TILE_TYPES.CAVE_FLOOR) {
+                if (Math.random() < 0.08) { // 8% chance for stone
+                    state.map.tiles[y][x].type = TILE_TYPES.STONE;
+                } else if (Math.random() < 0.02) { // 2% chance for gold ore
+                    state.map.tiles[y][x].type = TILE_TYPES.GOLD_ORE;
+                } else if (Math.random() < 0.03) { // 3% chance for mountain rock
+                    state.map.tiles[y][x].type = TILE_TYPES.MOUNTAIN_ROCK;
+                }
+            }
+        }
+    }
+    
+    // Generate the dungeon
+    generateDungeon();
+    
+    // Find a good spot for dungeon entrance (near center but not in dungeon
+    let dungeonEntranceX = Math.floor(state.map.width / 2);
+    let dungeonEntranceY = Math.floor(state.map.height / 2);
+    // Look for nearby cave floor
+    for (let r = 0; r < 50; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+                const tx = dungeonEntranceX + dx;
+                const ty = dungeonEntranceY + dy;
+                if (tx >5 && tx < state.map.width -6 && ty >5 && ty < state.map.height -6) {
+                    if (state.map.tiles[ty][tx].type === TILE_TYPES.CAVE_FLOOR) {
+                        // Check if nearby is dungeon
+                        let nearDungeon = false;
+                        for (let ddx = -2; ddx <= 2; ddx++) {
+                            for (let ddy = -2; ddy <=2; ddy++) {
+                                const dtx = tx + ddx;
+                                const dty = ty + ddy;
+                                if (dtx >=0 && dtx < state.map.width && dty >=0 && dty < state.map.height) {
+                                    if (state.map.tiles[dty][dtx].type === TILE_TYPES.DUNGEON_FLOOR || state.map.tiles[dty][dtx].type === TILE_TYPES.DUNGEON_WALL) {
+                                        nearDungeon = true;
+                                    }
+                                }
+                            }
+                        }
+                        if (nearDungeon) {
+                            dungeonEntranceX = tx;
+                            dungeonEntranceY = ty;
+                            state.map.tiles[dungeonEntranceY][dungeonEntranceX].type = TILE_TYPES.CAVE_ENTRANCE; // Reuse for dungeon entrance
+                            // Now connect entrance!
+                            state.map.tiles[dungeonEntranceY][dungeonEntranceX].type = TILE_TYPES.CAVE_ENTRANCE;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (state.map.tiles[dungeonEntranceY][dungeonEntranceX].type === TILE_TYPES.CAVE_ENTRANCE) break;
+        }
+        if (state.map.tiles[dungeonEntranceY][dungeonEntranceX].type === TILE_TYPES.CAVE_ENTRANCE) break;
+    }
+    
+    state.currentMap = 'cave';
+    state.caveMap = {
+        tiles: JSON.parse(JSON.stringify(state.map.tiles)),
+        width: state.map.width,
+        height: state.map.height,
+        dungeonEntrance: {x: dungeonEntranceX, y: dungeonEntranceY},
+        enemies: JSON.parse(JSON.stringify(state.enemies))
+    };}
+}
+
+// ===== ОТРИСОВКА: ПОМОЩНИКИ =====
 function getWaterColor(dist) {
     if (dist < 3) return '#29b6f6';
     if (dist < 8) {
@@ -798,6 +1172,89 @@ function updateChunk(chunk) {
                     ctx.fillRect(lx * ts + ts - 4, ly * ts, 4, 4);
                     ctx.fillRect(lx * ts, ly * ts + ts - 4, 4, 4);
                     ctx.fillRect(lx * ts + ts - 4, ly * ts + ts - 4, 4, 4);
+                } else if (tile.type === TILE_TYPES.CAVE_ENTRANCE) {
+                    // Cave entrance (dark)
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Draw cave entrance decoration
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                    ctx.beginPath();
+                    ctx.arc(lx * ts + ts/2, ly * ts + ts, ts/2, Math.PI, 0);
+                    ctx.fill();
+                    
+                    // Add stone frame
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.strokeStyle = '#2a2a2a';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(lx * ts + ts/2, ly * ts + ts, ts/2, Math.PI, 0);
+                    ctx.stroke();
+                } else if (tile.type === TILE_TYPES.CAVE_EXIT) {
+                    // Cave exit (bright)
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Draw bright glow
+                    const gradient = ctx.createRadialGradient(
+                        lx * ts + ts/2, ly * ts + ts/2, 0,
+                        lx * ts + ts/2, ly * ts + ts/2, ts/2
+                    );
+                    gradient.addColorStop(0, 'rgba(255, 255, 200, 0.8)');
+                    gradient.addColorStop(1, 'rgba(255, 250, 200, 0.2)');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                } else if (tile.type === TILE_TYPES.CAVE_FLOOR) {
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Add cave floor texture
+                    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                    for (let py = 0; py < ts; py += 4) {
+                        for (let px = 0; px < ts; px += 4) {
+                            if ((px + py + gx + gy) % 3 === 0) {
+                                ctx.fillRect(lx * ts + px, ly * ts + py, 2, 2);
+                            }
+                        }
+                    }
+                } else if (tile.type === TILE_TYPES.CAVE_WALL) {
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Add cave wall texture
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    for (let py = 0; py < ts; py += 4) {
+                        for (let px = 0; px < ts; px += 4) {
+                            if ((px + py + gx + gy) % 2 === 0) {
+                                ctx.fillRect(lx * ts + px, ly * ts + py, 3, 3);
+                            }
+                        }
+                    }
+                } else if (tile.type === TILE_TYPES.DUNGEON_FLOOR) {
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Add dungeon floor texture
+                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    for (let py = 0; py < ts; py += 4) {
+                        for (let px = 0; px < ts; px += 4) {
+                            if ((px + py + gx + gy) % 4 === 0) {
+                                ctx.fillRect(lx * ts + px, ly * ts + py, 2, 2);
+                            }
+                        }
+                    }
+                } else if (tile.type === TILE_TYPES.DUNGEON_WALL) {
+                    ctx.fillStyle = tile.type.color;
+                    ctx.fillRect(lx * ts, ly * ts, ts, ts);
+                    
+                    // Add dungeon wall texture (brick-like)
+                    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                    for (let py = 0; py < ts; py += 8) {
+                        ctx.fillRect(lx * ts, ly * ts + py, ts, 2);
+                    }
+                    for (let px = 0; px < ts; px += 16) {
+                        ctx.fillRect(lx * ts + px, ly * ts, 2, ts);
+                    }
                 } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK) {
                     // Even darker mountain rock (middle layer)
                     ctx.fillStyle = tile.type.color;
@@ -1126,6 +1583,7 @@ function updateChunk(chunk) {
     chunk.dirty = false;
 }
 
+// ===== ОБНОВЛЕНИЕ ЧАНКОВ =====
 function markTileDirty(tx, ty) {
     const cx = Math.floor(tx / state.map.chunkSize);
     const cy = Math.floor(ty / state.map.chunkSize);
@@ -1141,6 +1599,7 @@ function markTileDirty(tx, ty) {
     }
 }
 
+// ===== ТУМАН ВОЙНЫ =====
 function drawFogOfWar() {
     const ts = state.map.tileSize;
     const visionRadiusPx = state.map.visionRadius * ts * 1.2; 
@@ -1226,15 +1685,7 @@ function isPathClearOfWater(startX, startY, endX, endY) {
 function initEntities() {
     state.nextJobId = 1;
     state.entities.push({
-        id: 1, name: 'Makcum', x: 50.5, y: 50.5, color: '#ffcc80', target: null, job: null,
-        speed: 0.1, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: [], taskQueue: []
-    });
-    state.entities.push({
-        id: 2, name: 'Yaroslav', x: 51.5, y: 50.5, color: '#f48fb1', target: null, job: null,
-        speed: 0.12, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: [], taskQueue: []
-    });
-    state.entities.push({
-        id: 3, name: "Admin", x: 50.5, y: 51.5, color: '#90caf9', target: null, job: null,
+        id: 1, name: "Admin", x: 50.5, y: 50.5, color: '#90caf9', target: null, job: null,
         speed: 0.08, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: [], taskQueue: []
     });
     updateCharacterMenu();
@@ -1447,7 +1898,29 @@ window.addEventListener('mousedown', (e) => {
         return;
     }
     if (e.button === 0) {
-        if (state.currentOrder === 'mine') {
+        if (state.combat.attackMode) {
+            const now = Date.now();
+            if (now - state.combat.lastAttackTime >= state.combat.attackCooldown) {
+                // Check if we clicked an enemy!
+                const worldPos = screenToWorld(e.clientX, e.clientY);
+                const clickedEnemy = state.enemies.find(enemy => {
+                    const dx = enemy.x - (worldPos.x / state.map.tileSize);
+                    const dy = enemy.y - (worldPos.y / state.map.tileSize);
+                    return Math.sqrt(dx * dx + dy * dy) < 0.8;
+                });
+                
+                if (clickedEnemy) {
+                    // Attack the enemy!
+                    clickedEnemy.hp -= state.player.attack;
+                    state.combat.lastAttackTime = now;
+                    
+                    // Check if enemy died!
+                    if (clickedEnemy.hp <= 0) {
+                        state.enemies = state.enemies.filter(e => e !== clickedEnemy);
+                    }
+                }
+            }
+        } else if (state.currentOrder === 'mine') {
             // Start selection for multiple tiles
             state.mineSelection.active = true;
             state.mineSelection.startX = e.clientX;
@@ -1849,18 +2322,173 @@ function screenToWorld(screenX, screenY) {
     return { x, y };
 }
 
+// Variable to track if any selected entity is near cave entrance/exit
+let nearbyCaveTile = null;
+
+function updateHPUI() {
+    const hpBar = document.getElementById('hp-bar');
+    const hpText = document.getElementById('hp-text');
+    const hpPercent = (state.player.hp / state.player.maxHp) * 100;
+    hpBar.style.width = `${hpPercent}%`;
+    hpText.textContent = `${Math.max(0, state.player.hp)} / ${state.player.maxHp}`;
+}
+
+function toggleAttackMode() {
+    state.combat.attackMode = !state.combat.attackMode;
+    const attackBtn = document.getElementById('attack-btn');
+    if (state.combat.attackMode) {
+        attackBtn.classList.add('active');
+    } else {
+        attackBtn.classList.remove('active');
+    }
+}
+
+function handleCaveInteraction() {
+    if (!nearbyCaveTile) return;
+    const tile = nearbyCaveTile;
+    
+    // Save current map state
+    saveCurrentMap();
+    
+    if (state.currentMap === 'overworld' && tile.type === TILE_TYPES.CAVE_ENTRANCE) {
+        // Entering cave from overworld
+        state.caveEntrance = { x: tile.x, y: tile.y };
+        
+        if (!state.caveMap) {
+            initCaveMap();
+        } else {
+            state.map.tiles = state.caveMap.tiles;
+            state.currentMap = 'cave';
+            state.enemies = state.caveMap.enemies ? JSON.parse(JSON.stringify(state.caveMap.enemies)) : [];
+        }
+        
+        // Find spawn in cave NOT in dungeon!
+        let spawnX = Math.floor(state.map.width / 2);
+        let spawnY = Math.floor(state.map.height / 2);
+        // Look for nearby cave floor
+        for (let r = 0; r < 50; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    const tx = spawnX + dx;
+                    const ty = spawnY + dy;
+                    if (tx > 5 && tx < state.map.width -6 && ty >5 && ty < state.map.height -6) {
+                        if (state.map.tiles[ty][tx].type === TILE_TYPES.CAVE_FLOOR) {
+                            spawnX = tx;
+                            spawnY = ty;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        state.entities.forEach(ent => {
+            ent.x = spawnX + 0.5;
+            ent.y = spawnY + 0.5;
+            ent.target = null;
+            ent.path = [];
+            ent.job = null;
+        });
+        
+        state.map.chunks.forEach(row => row.forEach(chunk => chunk.dirty = true));
+        
+        state.camera.x = -spawnX * state.map.tileSize;
+        state.camera.y = -spawnY * state.map.tileSize;
+        
+    } else if (state.currentMap === 'cave' && tile.type === TILE_TYPES.CAVE_EXIT) {
+        // Exit cave to overworld
+        if (state.overworldMap) {
+            state.map.tiles = state.overworldMap.tiles;
+            state.currentMap = 'overworld';
+            state.enemies = state.overworldMap.enemies ? JSON.parse(JSON.stringify(state.overworldMap.enemies)) : [];
+        }
+        
+        if (state.caveEntrance) {
+            state.entities.forEach(ent => {
+                ent.x = state.caveEntrance.x + 0.5;
+                ent.y = state.caveEntrance.y + 1.5;
+                ent.target = null;
+                ent.path = [];
+                ent.job = null;
+            });
+            
+            state.camera.x = -state.caveEntrance.x * state.map.tileSize;
+            state.camera.y = -state.caveEntrance.y * state.map.tileSize;
+        }
+        
+        state.map.chunks.forEach(row => row.forEach(chunk => chunk.dirty = true));
+        
+    } else if (state.currentMap === 'cave' && tile.type === TILE_TYPES.CAVE_ENTRANCE) {
+        // Entering dungeon from cave!
+        state.dungeonEntrance = { x: tile.x, y: tile.y };
+        
+        // Save cave enemies first, then generate dungeon!
+        // Wait, in initCaveMap we already generate dungeon, but let's load it as separate? No, wait, we have cave tiles are cave and dungeon is part of cave tiles? No, no, let's teleport to the CAVE_EXIT tile which is in dungeon!
+        // Let's find the dungeon exit tile (CAVE_EXIT) which is our spawn!
+        let dungeonSpawnX = Math.floor(state.map.width /2);
+        let dungeonSpawnY = Math.floor(state.map.height /2);
+        for (let y =0; y < state.map.height; y++) {
+            for (let x=0; x < state.map.width; x++) {
+                if (state.map.tiles[y][x].type === TILE_TYPES.CAVE_EXIT) {
+                    dungeonSpawnX = x;
+                    dungeonSpawnY = y;
+                }
+            }
+        }
+        
+        state.entities.forEach(ent => {
+            ent.x = dungeonSpawnX + 0.5;
+            ent.y = dungeonSpawnY + 0.5;
+            ent.target = null;
+            ent.path = [];
+            ent.job = null;
+        });
+        
+        state.map.chunks.forEach(row => row.forEach(chunk => chunk.dirty = true));
+        
+        state.camera.x = -dungeonSpawnX * state.map.tileSize;
+        state.camera.y = -dungeonSpawnY * state.map.tileSize;
+        
+    } else if (state.currentMap === 'cave' && tile.type === TILE_TYPES.CAVE_EXIT) {
+        // Exit dungeon back to cave entrance!
+        let spawnBackX = state.caveMap.dungeonEntrance ? state.caveMap.dungeonEntrance.x : Math.floor(state.map.width / 2);
+        let spawnBackY = state.caveMap.dungeonEntrance ? state.caveMap.dungeonEntrance.y : Math.floor(state.map.height / 2);
+        
+        state.entities.forEach(ent => {
+            ent.x = spawnBackX +0.5;
+            ent.y = spawnBackY +0.5;
+            ent.target = null;
+            ent.path = [];
+            ent.job = null;
+        });
+        
+        state.map.chunks.forEach(row => row.forEach(chunk => chunk.dirty = true));
+        
+        state.camera.x = -spawnBackX * state.map.tileSize;
+        state.camera.y = -spawnBackY * state.map.tileSize;
+    }
+}
+
+// ===== Клавиатурные сокращения =====
 window.addEventListener('keydown', (e) => {
     state.keys[e.code] = true;
     if (!state.keyPressTime[e.code]) state.keyPressTime[e.code] = Date.now();
-    if (e.code === 'Space') { e.preventDefault(); deselectEntity(); }
-    else if (e.code === 'KeyL') toggleFogOfWar();
-    else if (e.code === 'KeyH') toggleUI();
-    else if (e.code === 'KeyP') toggleDebugTime();
-    else if (e.code === 'KeyZ') setOrder('architect');
-    else if (e.code === 'KeyX') setOrder('unarchitect');
-    else if (e.code === 'KeyC') setOrder('chop');
-    else if (e.code === 'KeyV') setOrder('mine');
-    else if (e.code === 'KeyT') selectAllEntities();
+    if (e.code === 'Space') { e.preventDefault(); deselectEntity(); } // Space - снять выбор
+    else if (e.code === 'KeyL') toggleFogOfWar(); // L - туман войны
+    else if (e.code === 'KeyH') toggleUI(); // H - скрыть интерфейс
+    else if (e.code === 'KeyP') toggleDebugTime(); // P - отладка времени
+    else if (e.code === 'KeyZ') setOrder('architect'); // Z - режим строительства
+    else if (e.code === 'KeyX') setOrder('unarchitect'); // X - режим разрушения
+    else if (e.code === 'KeyC') setOrder('chop'); // C - режим рубки
+    else if (e.code === 'KeyV') setOrder('mine'); // V - режим добычи
+    else if (e.code === 'KeyT') selectAllEntities(); // T - выбрать всех персонажей
+    else if (e.code === 'KeyF') {
+        if (nearbyCaveTile) {
+            handleCaveInteraction(); // F - взаимодействие с пещерой (если рядом)
+        } else {
+            toggleAttackMode(); // F - режим атаки
+        }
+    }
 });
 
 window.addEventListener('keyup', (e) => {
@@ -1955,10 +2583,17 @@ window.addEventListener('mousemove', (e) => {
     );
     
     // Reset all cursor classes
-    customCursor.classList.remove('cursor-default', 'cursor-select', 'cursor-chop', 'cursor-mine');
+    customCursor.classList.remove('cursor-default', 'cursor-select', 'cursor-chop', 'cursor-mine', 'cursor-attack');
     
-    if (isOverUI) {
+    // ===== Логика курсора =====
+    if (state.combat.attackMode && !isOverUI) {
+        // Курсор атаки (меч)
+        customCursor.textContent = ''; // Очищаем текст, используем изображение
+        customCursor.classList.add('cursor-attack');
+        customCursor.style.display = 'block';
+    } else if (isOverUI) {
         // Select cursor for UI/buttons
+        customCursor.textContent = '';
         customCursor.style.backgroundImage = 'url(assets/select.png)';
         customCursor.classList.add('cursor-select');
         customCursor.style.display = 'block';
@@ -2168,6 +2803,80 @@ function update() {
         }
         updateTimeUI();
     }
+    
+    // Update enemies (skeletons) AI
+    const now = Date.now();
+    state.enemies.forEach(enemy => {
+        // Find closest player/entity
+        let closestEnt = null;
+        let closestDist = Infinity;
+        state.entities.forEach(ent => {
+            const dx = ent.x - enemy.x;
+            const dy = ent.y - enemy.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestEnt = ent;
+            }
+        });
+
+        if (closestEnt && closestDist <= enemy.detectionRadius) {
+            // Chase the entity
+            enemy.target = { x: closestEnt.x, y: closestEnt.y };
+            
+            // Attack if close enough
+            if (closestDist <= 1.5 && now - enemy.lastAttackTime >= 1000) {
+                // Enemy attacks player!
+                state.player.hp -= enemy.attack;
+                enemy.lastAttackTime = now;
+                updateHPUI();
+                
+                // Check if player died!
+                if (state.player.hp <= 0) {
+                    document.getElementById('death-screen').classList.remove('hidden');
+                }
+            }
+            
+            // Move towards target, checking for walls
+            const dx = enemy.target.x - enemy.x;
+            const dy = enemy.target.y - enemy.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 0.1) {
+                const speed = 0.04; // Enemy movement speed
+                const nextX = enemy.x + (dx / dist) * speed;
+                const nextY = enemy.y + (dy / dist) * speed;
+                const tileX = Math.floor(nextX);
+                const tileY = Math.floor(nextY);
+                
+                // Check if next tile is walkable
+                if (tileX >= 0 && tileX < state.map.width && tileY >= 0 && tileY < state.map.height) {
+                    const tile = state.map.tiles[tileY][tileX];
+                    if (!tile.type.solid) {
+                        enemy.x = nextX;
+                        enemy.y = nextY;
+                    } else {
+                        // If blocked, try to move along one axis only
+                        const nextXOnly = enemy.x + (dx / dist) * speed;
+                        const tileXOnly = Math.floor(nextXOnly);
+                        if (tileXOnly >= 0 && tileXOnly < state.map.width && tileY >= 0 && tileY < state.map.height) {
+                            const tileXOnlyTile = state.map.tiles[tileY][tileXOnly];
+                            if (!tileXOnlyTile.solid) {
+                                enemy.x = nextXOnly;
+                            }
+                        }
+                        const nextYOnly = enemy.y + (dy / dist) * speed;
+                        const tileYOnly = Math.floor(nextYOnly);
+                        if (tileX >= 0 && tileX < state.map.width && tileYOnly >= 0 && tileYOnly < state.map.height) {
+                            const tileYOnlyTile = state.map.tiles[tileYOnly][tileX];
+                            if (!tileYOnlyTile.solid) {
+                                enemy.y = nextYOnly;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
     
     state.entities.forEach(ent => {
         if (ent.status !== 'sleeping') {
@@ -2517,6 +3226,30 @@ function render() {
         if (ent.status === 'sleeping') displayName += ' 💤';
         ctx.fillText(displayName, ent.x * state.map.tileSize, ent.y * state.map.tileSize - 15);
     });
+    
+    // Draw enemies (skeletons)
+    state.enemies.forEach(enemy => {
+        // Enemy body
+        ctx.fillStyle = '#d3d3d3';
+        ctx.beginPath();
+        ctx.arc(enemy.x * state.map.tileSize, enemy.y * state.map.tileSize, state.map.tileSize / 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Enemy HP bar
+        const hpBarWidth = state.map.tileSize;
+        const hpBarHeight = 4;
+        const hpPercent = enemy.hp / enemy.maxHp;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(
+            enemy.x * state.map.tileSize - hpBarWidth / 2, enemy.y * state.map.tileSize - state.map.tileSize / 2 - 8,
+            hpBarWidth, hpBarHeight
+        );
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(
+            enemy.x * state.map.tileSize - hpBarWidth / 2, enemy.y * state.map.tileSize - state.map.tileSize / 2 - 8,
+            hpBarWidth * hpPercent, hpBarHeight
+        );
+    });
     ctx.restore();
     if (state.selectionBox.active) {
         const minX = Math.min(state.selectionBox.startX, state.selectionBox.endX);
@@ -2571,6 +3304,64 @@ function render() {
     
     update();
         updateActionPanel(); // Update task panel
+        
+    // Check for nearby cave entrances/exits
+    nearbyCaveTile = null;
+    const cavePrompt = document.getElementById('cave-prompt');
+    for (const ent of state.entities) {
+        const tileX = Math.floor(ent.x);
+        const tileY = Math.floor(ent.y);
+        // Check nearby tiles (3x3 area)
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const nx = tileX + dx;
+                const ny = tileY + dy;
+                if (nx >= 0 && nx < state.map.width && ny >=0 && ny < state.map.height) {
+                    const tile = state.map.tiles[ny][nx];
+                    if (tile.type === TILE_TYPES.CAVE_ENTRANCE || tile.type === TILE_TYPES.CAVE_EXIT) {
+                        nearbyCaveTile = tile;
+                        break;
+                    }
+                }
+            }
+            if (nearbyCaveTile) break;
+        }
+        if (nearbyCaveTile) break;
+    }
+    if (nearbyCaveTile) {
+        cavePrompt.classList.remove('hidden');
+        if (state.currentMap === 'overworld' && nearbyCaveTile.type === TILE_TYPES.CAVE_ENTRANCE) {
+            cavePrompt.innerText = 'Чтобы войти в пещеру нажмите F';
+        } else if (state.currentMap === 'cave' && nearbyCaveTile.type === TILE_TYPES.CAVE_ENTRANCE) {
+            // That's our dungeon entrance!
+            cavePrompt.innerText = 'Чтобы войти в данж нажмите F';
+        } else if (state.currentMap === 'cave' && nearbyCaveTile.type === TILE_TYPES.CAVE_EXIT) {
+            // Check if we're in dungeon? Well, if nearby is cave exit, then we have two options: exit to overworld OR exit to cave from dungeon!
+            // Let's check if there are dungeon tiles nearby (dungeon floor/wall)
+            let isNearDungeon = false;
+            for (let ddx = -5; ddx <=5; ddx++) {
+                for (let ddy =-5; ddy <=5; ddy++) {
+                    const tx = nearbyCaveTile.x + ddx;
+                    const ty = nearbyCaveTile.y + ddy;
+                    if (tx >=0 && tx < state.map.width && ty >=0 && ty < state.map.height) {
+                        if (state.map.tiles[ty][tx].type === TILE_TYPES.DUNGEON_FLOOR || state.map.tiles[ty][tx].type === TILE_TYPES.DUNGEON_WALL) {
+                            isNearDungeon = true;
+                        }
+                    }
+                }
+            }
+            if (isNearDungeon) {
+                cavePrompt.innerText = 'Чтобы выйти из данжа в пещеру нажмите F';
+            } else {
+                cavePrompt.innerText = 'Чтобы выйти из пещеры нажмите F';
+            }
+        } else {
+            cavePrompt.innerText = 'Чтобы выйти нажмите F';
+        }
+    } else {
+        cavePrompt.classList.add('hidden');
+    }
+    
     requestAnimationFrame(render);
 }
 window.regenerateWorld = function() {
@@ -2596,6 +3387,18 @@ window.regenerateWorld = function() {
     state.jobs = [];
     state.camera.x = -(baseSpawnX * state.map.tileSize); state.camera.y = -(baseSpawnY * state.map.tileSize);
     updateCharacterMenu();
+};
+
+window.restartGame = function() {
+    // Reset player health
+    state.player.hp = state.player.maxHp;
+    updateHPUI();
+    
+    // Hide death screen
+    document.getElementById('death-screen').classList.add('hidden');
+    
+    // Regenerate the world
+    regenerateWorld();
 };
 window.setOrder = function(type) {
     state.lastPaintedTile = null; // Reset when order changes

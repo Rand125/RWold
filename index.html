@@ -64,12 +64,22 @@
                 <button id="cancel-all-btn" class="cancel-all-btn" onclick="cancelAllTasks()">Завершение всей работы</button>
             </div>
             
+            <!-- Player HP Bar (Top Left Below Regen) -->
+            <div id="hp-container">
+                <span class="hp-icon">❤️</span>
+                <div class="hp-bar-wrapper">
+                    <div id="hp-bar"></div>
+                </div>
+                <span id="hp-text">100 / 100</span>
+            </div>
+            
             <!-- Bottom Menu (Center Bottom) -->
             <div id="bottom-menu">
                 <button onclick="setOrder('architect')">Architect</button>
                 <button onclick="setOrder('unarchitect')">Destruct</button>
                 <button onclick="setOrder('chop')">Chop</button>
                 <button onclick="setOrder('mine')">Mine</button>
+                <button id="attack-btn" onclick="toggleAttackMode()">Attack</button>
             </div>
             
             <!-- Character Menu (Bottom Right - no deselect) -->
@@ -86,7 +96,7 @@
                     </button>
                     <button onclick="setBuildOrder('stone_wall')">
                         <span class="build-icon">🧱</span>
-                        Stone Wall
+                        Wall
                         <span class="build-cost">12 Stone</span>
                     </button>
                     <button onclick="setBuildOrder('wood_wall')">
@@ -104,13 +114,23 @@
                 <div id="inspect-content"></div>
             </div>
             <div id="inspect-widget" class="hidden">
-                <div class="widget-avatar" id="widget-avatar">👤</div>
+                <div class="widget-avatar" id="widget-avatar">
+                    <img src="assets/avatar.jpg" alt="err">
+                </div>
             </div>
             <div id="debug-time-panel" class="hidden">
                 <label for="time-slider">Debug Time:</label>
                 <input type="range" id="time-slider" min="0" max="1439" value="480">
                 <span id="slider-time-display">08:00</span>
             </div>
+            <!-- Cave Prompt -->
+            <div id="cave-prompt" class="hidden"></div>
+            
+            <!-- Death Screen -->
+    <div id="death-screen" class="hidden">
+        <div class="death-text">Вы Мертвы</div>
+        <button id="restart-btn" onclick="restartGame()">Создать новый мир</button>
+    </div>
         </div>
     </div>
     <script src="js/game.js"></script>
