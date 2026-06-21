@@ -947,6 +947,28 @@ button:hover::after {
     transform-origin: bottom right;
 }
 
+/* Notification */
+#notification {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) scale(var(--ui-scale));
+    transform-origin: bottom center;
+    background: var(--dota-panel);
+    border: 2px solid var(--dota-red);
+    border-radius: 4px;
+    padding: 15px 25px;
+    font-family: var(--dota-font-main);
+    color: var(--dota-text);
+    font-size: 17px;
+    box-shadow: var(--dota-shadow);
+    z-index: 100;
+}
+
+#notification.hidden {
+    display: none;
+}
+
 /* Death Screen */
 #death-screen {
     position: absolute;

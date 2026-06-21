@@ -4,6 +4,7 @@ const ctx = canvas.getContext('2d');
 
 // состояние игры
 const state = {
+    pickaxeDurability: 0, // сколько ударов у кирки
     camera: {
         x: -1616,
         y: -1616,
@@ -118,6 +119,7 @@ const TILE_TYPES = {
     WALL: { color: '#424242', name: 'Wall', solid: true },
     WOOD_WALL: { color: '#8B4513', name: 'Wooden Wall', solid: true },
     TREE: { color: 'rgb(95, 94, 40)', name: 'Tree', solid: true, harvestable: 'wood' },
+    FOOD_BUSH: { color: '#2e8b57', name: 'Food Bush', harvestable: 'food' },
     BRIDGE: { color: '#8B4513', name: 'Bridge', moveCost: 1.5 },
     CAVE_ENTRANCE: { color: '#1a1a1a', name: 'Cave Entrance', moveCost: 1.5 }, // Темный вход
     CAVE_EXIT: { color: '#fffacd', name: 'Cave Exit', moveCost: 1.5 }, // Светлый выход
@@ -252,12 +254,14 @@ function animateDigitElement(el, from, to) {
     requestAnimationFrame(animateFrame);
 }
 
+let prevPickaxeDurability = 0;
 function updateResourceUI() {
     updateCounter('silver-count', state.resources.silver, state.prevResources.silver);
     updateCounter('stone-count', state.resources.stone, state.prevResources.stone);
     updateCounter('wood-count', state.resources.wood, state.prevResources.wood);
     updateCounter('food-count', state.resources.food, state.prevResources.food);
     updateCounter('gold-count', state.resources.gold, state.prevResources.gold);
+    updateCounter('pickaxe-count', state.pickaxeDurability, prevPickaxeDurability);
     
     // Обновляем предыдущие значения
     state.prevResources.silver = state.resources.silver;
@@ -265,6 +269,32 @@ function updateResourceUI() {
     state.prevResources.wood = state.resources.wood;
     state.prevResources.food = state.resources.food;
     state.prevResources.gold = state.resources.gold;
+    prevPickaxeDurability = state.pickaxeDurability;
+}
+
+// Показать уведомление
+function showNotification(text) {
+    console.log('Showing notification:', text);
+    const notificationEl = document.getElementById('notification');
+    if (notificationEl) {
+        notificationEl.textContent = text;
+        notificationEl.classList.remove('hidden');
+        setTimeout(() => {
+            notificationEl.classList.add('hidden');
+        }, 3000);
+    }
+}
+
+// Крафт кирки
+window.craftPickaxe = function() {
+    if (state.resources.wood >= 48) {
+        state.resources.wood -= 48;
+        state.pickaxeDurability += 50;
+        updateResourceUI();
+        showNotification('Кирка создана! Прочность: 50');
+    } else {
+        showNotification('Недостаточно дерева! Нужно 48');
+    }
 }
 
 function updateCharacterMenu() {
@@ -650,6 +680,38 @@ function initMap() {
                         treePositions.add(key);
                         state.map.tiles[y][x].type = TILE_TYPES.TREE;
                     }
+                }
+            }
+        }
+    }
+
+    // Step 4.5: Generate food bushes rarely near trees
+    const bushPositions = new Set();
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            if (tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || tile.type === TILE_TYPES.LIGHT_GRASS) {
+                // Check if there's a tree nearby
+                let hasNearbyTree = false;
+                for (let dy = -3; dy <= 3; dy++) {
+                    for (let dx = -3; dx <= 3; dx++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                            const neighbor = state.map.tiles[ny][nx];
+                            if (neighbor.type === TILE_TYPES.TREE) {
+                                hasNearbyTree = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasNearbyTree) break;
+                }
+
+                if (hasNearbyTree && Math.random() < 0.02) { // 2% chance per valid tile
+                    const key = `${x},${y}`;
+                    bushPositions.add(key);
+                    state.map.tiles[y][x].type = TILE_TYPES.FOOD_BUSH;
                 }
             }
         }
@@ -1518,6 +1580,39 @@ function updateChunk(chunk) {
                         ctx.closePath();
                         ctx.fill();
                     }
+                } else if (tile.type === TILE_TYPES.FOOD_BUSH) {
+                    // Draw food bush
+                    const baseX = lx * ts;
+                    const baseY = ly * ts;
+                    const seed = gx * 1000 + gy;
+                    
+                    // Draw bush base (dark green)
+                    ctx.fillStyle = '#228B22';
+                    ctx.beginPath();
+                    ctx.arc(baseX + ts/2, baseY + ts/2 + 3, ts/3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add some leaves (lighter green)
+                    ctx.fillStyle = '#32CD32';
+                    ctx.beginPath();
+                    ctx.arc(baseX + ts/2 - 5, baseY + ts/2, ts/4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(baseX + ts/2 + 5, baseY + ts/2, ts/4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(baseX + ts/2, baseY + ts/2 - 5, ts/4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Add berries (red)
+                    ctx.fillStyle = '#FF0000';
+                    for (let i = 0; i < 3 + (seed % 3); i++) {
+                        const bx = baseX + ts/2 + (seed * (i+1) % 12) - 6;
+                        const by = baseY + ts/2 + (seed * (i+2) % 12) - 6;
+                        ctx.beginPath();
+                        ctx.arc(bx, by, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 } else if (tile.type === TILE_TYPES.BRIDGE) {
                     const baseX = lx * ts;
                     const baseY = ly * ts;
@@ -1862,16 +1957,20 @@ function tryPlaceJob(mouseX, mouseY) {
                 }
             }
             else if (state.currentOrder === 'mine' && (state.map.tiles[ty][tx].type === TILE_TYPES.STONE || state.map.tiles[ty][tx].type === TILE_TYPES.GOLD_ORE || state.map.tiles[ty][tx].type === TILE_TYPES.MOUNTAIN_ROCK || state.map.tiles[ty][tx].type === TILE_TYPES.MOUNTAIN_SNOW)) {
-                const tile = state.map.tiles[ty][tx];
-                let resource;
-                if (tile.type === TILE_TYPES.GOLD_ORE) {
-                    resource = 'gold';
-                } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
-                    resource = 'mountain';
+                if (state.pickaxeDurability > 0) {
+                    const tile = state.map.tiles[ty][tx];
+                    let resource;
+                    if (tile.type === TILE_TYPES.GOLD_ORE) {
+                        resource = 'gold';
+                    } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
+                        resource = 'mountain';
+                    } else {
+                        resource = 'stone';
+                    }
+                    job = { id: state.nextJobId++, type: 'mine', x: tx, y: ty, progress: 0, assigned: false, resource: resource };
                 } else {
-                    resource = 'stone';
+                    showNotification('Нет кирки! Создай её в Architect меню');
                 }
-                job = { id: state.nextJobId++, type: 'mine', x: tx, y: ty, progress: 0, assigned: false, resource: resource };
             }
             else if (state.currentOrder === 'chop' && state.map.tiles[ty][tx].type === TILE_TYPES.TREE) job = { id: state.nextJobId++, type: 'chop', x: tx, y: ty, progress: 0, assigned: false };
             else if (state.currentOrder === 'unarchitect' && (state.map.tiles[ty][tx].type === TILE_TYPES.WALL || state.map.tiles[ty][tx].type === TILE_TYPES.WOOD_WALL || state.map.tiles[ty][tx].type === TILE_TYPES.BRIDGE)) job = { id: state.nextJobId++, type: 'destruct', x: tx, y: ty, progress: 0, assigned: false };
@@ -1931,12 +2030,16 @@ window.addEventListener('mousedown', (e) => {
                 }
             }
         } else if (state.currentOrder === 'mine') {
-            // Start selection for multiple tiles
-            state.mineSelection.active = true;
-            state.mineSelection.startX = e.clientX;
-            state.mineSelection.startY = e.clientY;
-            state.mineSelection.endX = e.clientX;
-            state.mineSelection.endY = e.clientY;
+            if (state.pickaxeDurability > 0) {
+                // Start selection for multiple tiles
+                state.mineSelection.active = true;
+                state.mineSelection.startX = e.clientX;
+                state.mineSelection.startY = e.clientY;
+                state.mineSelection.endX = e.clientX;
+                state.mineSelection.endY = e.clientY;
+            } else {
+                showNotification('Нет кирки! Создай её в Architect меню');
+            }
         } else if (state.currentOrder === 'chop') {
             // Start selection for multiple trees
             state.chopSelection.active = true;
@@ -1985,15 +2088,26 @@ window.addEventListener('mousedown', (e) => {
                      tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
                 const existingJob = state.jobs.find(j => j.type === 'mine' && j.x === tx && j.y === ty);
                 if (!existingJob) {
-                    let resource;
-                    if (tile.type === TILE_TYPES.GOLD_ORE) {
-                        resource = 'gold';
-                    } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
-                        resource = 'mountain';
+                    if (state.pickaxeDurability > 0) {
+                        let resource;
+                        if (tile.type === TILE_TYPES.GOLD_ORE) {
+                            resource = 'gold';
+                        } else if (tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
+                            resource = 'mountain';
+                        } else {
+                            resource = 'stone';
+                        }
+                        job = { id: state.nextJobId++, type: 'mine', x: tx, y: ty, progress: 0, assigned: false, resource: resource };
                     } else {
-                        resource = 'stone';
+                        showNotification('Нет кирки! Создай её в Architect меню');
                     }
-                    job = { id: state.nextJobId++, type: 'mine', x: tx, y: ty, progress: 0, assigned: false, resource: resource };
+                }
+            }
+            // Проверка: куст с едой? Создаём задачу на сбор
+            else if (tile.type === TILE_TYPES.FOOD_BUSH) {
+                const existingJob = state.jobs.find(j => j.type === 'harvest' && j.x === tx && j.y === ty);
+                if (!existingJob) {
+                    job = { id: state.nextJobId++, type: 'harvest', x: tx, y: ty, progress: 0, assigned: false };
                 }
             }
             
@@ -2154,18 +2268,18 @@ function updateInspectPanel(ent) {
     widget.classList.add('hidden');
     
     title.innerText = ent.name;
-    let statusText = ent.job ? 'Working' : (ent.target ? 'Moving' : 'Idle');
-    if (ent.status === 'eating') statusText = 'Eating';
-    if (ent.status === 'sleeping') statusText = 'Sleeping';
+    let statusText = ent.job ? 'Работает' : (ent.target ? 'Идёт' : 'Без дела');
+    if (ent.status === 'eating') statusText = 'Ест';
+    if (ent.status === 'sleeping') statusText = 'Спит';
     content.innerHTML = `
-        <p>Status: ${statusText}</p>
-        <p>Food: ${Math.floor(ent.needs.food)}%</p>
-        <p>Rest: ${Math.floor(ent.needs.rest)}%</p>
+        <p>Состояние: ${statusText}</p>
+        <p>Сытость: ${Math.floor(ent.needs.food)}%</p>
+        <p>Отдых: ${Math.floor(ent.needs.rest)}%</p>
         <div class="inspect-actions">
-            <button onclick="orderEat()" ${state.resources.food <= 0 || ent.needs.food >= 100 || ent.status ? 'disabled' : ''}>Eat (1 Food)</button>
-            <button onclick="orderSleep()" ${ent.needs.rest >= 100 || ent.status ? 'disabled' : ''}>Sleep</button>
+            <button onclick="orderEat()" ${state.resources.food <= 0 || ent.needs.food >= 100 || ent.status ? 'disabled' : ''}>Поесть (1 Еда)</button>
+            <button onclick="orderSleep()" ${ent.needs.rest >= 100 || ent.status ? 'disabled' : ''}>Спать</button>
         </div>
-        <p style="color: #81d4fa; font-size: 0.8em;">(Right-click to move)</p>
+        <p style="color: #81d4fa; font-size: 0.8em;">(ПКМ для передвижения)</p>
         `;
 }
 
@@ -2656,6 +2770,13 @@ window.addEventListener('mousemove', (e) => {
                 customCursor.style.display = 'block';
                 tooltipText = 'ПКМ - Срубить';
                 showTooltip = true;
+            } else if (tile.type === TILE_TYPES.FOOD_BUSH) {
+                // Default cursor, but show tooltip for harvest
+                customCursor.style.backgroundImage = 'url(assets/cursor.png)';
+                customCursor.classList.add('cursor-default');
+                customCursor.style.display = 'block';
+                tooltipText = 'ПКМ - Собрать ягоды';
+                showTooltip = true;
             } else if (tile.type === TILE_TYPES.STONE || tile.type === TILE_TYPES.GOLD_ORE || 
                        tile.type === TILE_TYPES.MOUNTAIN_ROCK || tile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK || 
                        tile.type === TILE_TYPES.MOUNTAIN_SNOW) {
@@ -2722,6 +2843,11 @@ window.addEventListener('mouseup', (e) => {
         const isSingleClick = Math.abs(state.mineSelection.endX - state.mineSelection.startX) < 5 && 
                              Math.abs(state.mineSelection.endY - state.mineSelection.startY) < 5;
 
+        let hasPickaxe = state.pickaxeDurability > 0;
+        if (!hasPickaxe) {
+            showNotification('Нет кирки! Создай её в Architect меню');
+        }
+        
         for (let ty = Math.max(0, minTY); ty <= Math.min(state.map.height - 1, maxTY); ty++) {
             for (let tx = Math.max(0, minTX); tx <= Math.min(state.map.width - 1, maxTX); tx++) {
                 const tile = state.map.tiles[ty][tx];
@@ -2735,7 +2861,7 @@ window.addEventListener('mouseup', (e) => {
                                 ent.job = null;
                             }
                         });
-                    } else {
+                    } else if (hasPickaxe) {
                         let resource;
                         if (tile.type === TILE_TYPES.GOLD_ORE) {
                             resource = 'gold';
@@ -3042,34 +3168,47 @@ function update() {
                         else if (job.type === 'build_wood_wall') state.map.tiles[ty][tx].type = TILE_TYPES.WOOD_WALL;
                         else if (job.type === 'build_bridge') state.map.tiles[ty][tx].type = TILE_TYPES.BRIDGE;
                         else if (job.type === 'mine') { 
-                            state.map.tiles[ty][tx].type = TILE_TYPES.SOIL; 
-                            
-                            if (job.resource === 'gold') {
-                                // Gold ore gives gold + small stone
-                                const goldGain = Math.floor(Math.random() * 10) + 20; 
-                                const stoneFromGoldGain = Math.floor(Math.random() * 8) + 10; // 10-17 stone
-                                state.resources.gold += goldGain; 
-                                state.resources.stone += stoneFromGoldGain;
-                            } else if (job.resource === 'mountain') {
-                                // Mountain rock gives stone + small chance of gold
-                                const stoneGain = Math.floor(Math.random() * 10) + 50;
-                                state.resources.stone += stoneGain;
-                                // 8% chance to get gold from mountain rock (less than gold ore)
-                                if (Math.random() < 0.08) {
-                                    const goldGain = Math.floor(Math.random() * 3) + 2; // Less gold than gold ore
-                                    state.resources.gold += goldGain;
+                            // Проверка и уменьшение прочности кирки
+                            if (state.pickaxeDurability > 0) {
+                                state.pickaxeDurability -= 1;
+                                state.map.tiles[ty][tx].type = TILE_TYPES.SOIL; 
+                                
+                                if (job.resource === 'gold') {
+                                    // Gold ore gives gold + small stone
+                                    const goldGain = Math.floor(Math.random() * 10) + 20; 
+                                    const stoneFromGoldGain = Math.floor(Math.random() * 8) + 10; // 10-17 stone
+                                    state.resources.gold += goldGain; 
+                                    state.resources.stone += stoneFromGoldGain;
+                                } else if (job.resource === 'mountain') {
+                                    // Mountain rock gives stone + small chance of gold
+                                    const stoneGain = Math.floor(Math.random() * 10) + 50;
+                                    state.resources.stone += stoneGain;
+                                    // 8% chance to get gold from mountain rock (less than gold ore)
+                                    if (Math.random() < 0.08) {
+                                        const goldGain = Math.floor(Math.random() * 3) + 2; // Less gold than gold ore
+                                        state.resources.gold += goldGain;
+                                    }
+                                } else {
+                                    // Regular stone gives more stone
+                                    const stoneGain = Math.floor(Math.random() * 16) + 81;
+                                    state.resources.stone += stoneGain; 
                                 }
-                            } else {
-                                // Regular stone gives more stone
-                                const stoneGain = Math.floor(Math.random() * 16) + 81;
-                                state.resources.stone += stoneGain; 
+                                updateResourceUI(); 
+                                
+                                if (state.pickaxeDurability === 0) {
+                                    showNotification('Кирка сломалась!');
+                                }
                             }
-                            updateResourceUI(); 
                         }
                         else if (job.type === 'chop') {
                             state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
                             const woodGain = Math.floor(Math.random() * 16) + 81;
                             state.resources.wood += woodGain;
+                        }
+                        else if (job.type === 'harvest') {
+                            state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
+                            const foodGain = Math.floor(Math.random() * 10) + 15;
+                            state.resources.food += foodGain;
                             updateResourceUI();
                         }
                         else if (job.type === 'destruct') {
@@ -3149,7 +3288,7 @@ function updateTimeUI() {
     const sunIcon = document.getElementById('time-icon-sun');
     const moonIcon = document.getElementById('time-icon-moon');
     if (!timeDisplay) return;
-    timeDisplay.innerText = `Day ${state.time.day}, ${String(state.time.hour).padStart(2, '0')}:${String(state.time.minute).padStart(2, '0')}`;
+    timeDisplay.innerText = `День ${state.time.day}, ${String(state.time.hour).padStart(2, '0')}:${String(state.time.minute).padStart(2, '0')}`;
     
     if (sunIcon && moonIcon) {
         if (state.time.hour >= 6 && state.time.hour < 18) {
