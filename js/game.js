@@ -33,7 +33,7 @@ const state = {
         chunkSize: 16, 
         explored: null, 
         visionRadius: 20,
-        fogOfWarEnabled: true
+        fogOfWarEnabled: false
     },
     overworldMap: null, // Сохраненное состояние внешнего мира
     caveMap: null, // Сохраненное состояние пещеры
@@ -44,7 +44,7 @@ const state = {
         stone: 0,
         wood: 0,
         food: 10,
-        gold: 0 
+        gold: 0 // Добавляем золото
     },
     prevResources: {
         silver: 0,
@@ -56,6 +56,7 @@ const state = {
     entities: [],
     enemies: [], // Новый массив для врагов (скелетов)
     jobs: [],
+    depletedBushes: [], // Track depleted bushes for regrowth
     time: {
         day: 1,
         hour: 8,
@@ -120,6 +121,7 @@ const TILE_TYPES = {
     WOOD_WALL: { color: '#8B4513', name: 'Wooden Wall', solid: true },
     TREE: { color: 'rgb(95, 94, 40)', name: 'Tree', solid: true, harvestable: 'wood' },
     FOOD_BUSH: { color: '#2e8b57', name: 'Food Bush', harvestable: 'food' },
+    FOOD_BUSH_DEPLETED: { color: '#3d5c3d', name: 'Depleted Food Bush' },
     BRIDGE: { color: '#8B4513', name: 'Bridge', moveCost: 1.5 },
     CAVE_ENTRANCE: { color: '#1a1a1a', name: 'Cave Entrance', moveCost: 1.5 }, // Темный вход
     CAVE_EXIT: { color: '#fffacd', name: 'Cave Exit', moveCost: 1.5 }, // Светлый выход
@@ -578,6 +580,311 @@ function initMap() {
         }
     });
 
+    // Step 2.6: Generate caves (like mountains but more frequent!)
+    // First, generate cave ridges (more than mountain ridges!)
+    const caveRidges = [];
+    const numCaveRidges = Math.floor(Noise.fbm(12345, 67890, 1) * 6) + 6; // 6-12 cave ridges! Way more!
+
+    for (let cr = 0; cr < numCaveRidges; cr++) {
+        // Start with a random point
+        let caveStartX = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+        let caveStartY = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+
+        // Generate cave ridge path
+        const caveRidge = [];
+        let caveX = caveStartX;
+        let caveY = caveStartY;
+        let caveAngle = Math.random() * Math.PI * 2;
+        const caveRidgeLength = 60 + Math.floor(Math.random() * 100); // 60-160 tiles long! Longer!
+
+        for (let ci = 0; ci < caveRidgeLength; ci++) {
+            caveRidge.push({ x: caveX, y: caveY });
+
+            // Wiggle the angle slightly
+            caveAngle += (Math.random() - 0.5) * 0.5;
+
+            // Move forward
+            caveX += Math.cos(caveAngle) * 1.8;
+            caveY += Math.sin(caveAngle) * 1.8;
+
+            // Stop at edges
+            if (caveX < 20 || caveX > state.map.width - 20 || 
+                caveY < 20 || caveY > state.map.height - 20) {
+                break;
+            }
+        }
+
+        caveRidges.push(caveRidge);
+    }
+
+    // Also add individual cave centers! Lower elevation threshold!
+    const caveCenters = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            // Use elevation slightly lower than mountains for caves (even lower to get more!)
+            if (tile.elevation > 0.72 && tile.elevation <= 0.85) {
+                caveCenters.push({ x, y, elevation: tile.elevation });
+            }
+        }
+    }
+
+    // Generate cave areas from ridges!
+    caveRidges.forEach(caveRidge => {
+        const maxCaveLayerSize = 4 + Math.floor(Math.random() * 5); // 4-8 layers (bigger!)
+
+        for (let pointIdx = 0; pointIdx < caveRidge.length; pointIdx++) {
+            const point = caveRidge[pointIdx];
+            const distFromStart = pointIdx;
+            const distFromEnd = caveRidge.length - 1 - pointIdx;
+            const localMax = Math.min(distFromStart, distFromEnd);
+            const cavePeakFactor = localMax > caveRidge.length / 4 ? 1 : localMax / (caveRidge.length / 4);
+
+            for (let layer = 0; layer <= maxCaveLayerSize; layer++) {
+                const baseRadius = (maxCaveLayerSize - layer) * cavePeakFactor;
+                for (let dy = -Math.ceil(baseRadius + 1); dy <= Math.ceil(baseRadius + 1); dy++) {
+                    for (let dx = -Math.ceil(baseRadius + 1); dx <= Math.ceil(baseRadius + 1); dx++) {
+                        const nx = Math.floor(point.x) + dx;
+                        const ny = Math.floor(point.y) + dy;
+
+                        if (nx < 0 || nx >= state.map.width || ny < 0 || ny >= state.map.height) continue;
+
+                        const neighborTile = state.map.tiles[ny][nx];
+
+                        // Skip if already water or mountain
+                        if (neighborTile.type === TILE_TYPES.WATER || 
+                            neighborTile.type === TILE_TYPES.DEEP_WATER ||
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_SNOW || 
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK ||
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK) continue;
+
+                        // Calculate distance with noise
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const caveJaggedNoise = Noise.fbm((nx + 7777) * 0.25, (ny + 7777) * 0.25, 3);
+                        const caveNoisyRadius = baseRadius + caveJaggedNoise * 1.2 - 0.6;
+
+                        if (distance > caveNoisyRadius) continue;
+
+                        // Layer assignment for caves
+                        if (layer === 0) {
+                            // Innermost: cave floor!
+                            neighborTile.type = TILE_TYPES.CAVE_FLOOR;
+                        } else if (layer <= 1) {
+                            // Middle: stone
+                            neighborTile.type = TILE_TYPES.STONE;
+                        } else {
+                            // Outer: cave wall
+                            neighborTile.type = TILE_TYPES.CAVE_WALL;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Generate individual caves from cave centers!
+    caveCenters.forEach(caveCenter => {
+        const maxCaveLayerSize = 8 + Math.floor((caveCenter.elevation - 0.78) * 30); // 8-23 size (bigger!)
+        const caveCenterNoise = Noise.fbm(caveCenter.x * 0.06, caveCenter.y * 0.06, 2);
+
+        for (let layer = 0; layer <= maxCaveLayerSize; layer++) {
+            const baseRadius = maxCaveLayerSize - layer;
+            for (let dy = -baseRadius - 1; dy <= baseRadius + 1; dy++) {
+                for (let dx = -baseRadius - 1; dx <= baseRadius + 1; dx++) {
+                    const nx = caveCenter.x + dx;
+                    const ny = caveCenter.y + dy;
+
+                    if (nx < 0 || nx >= state.map.width || ny < 0 || ny >= state.map.height) continue;
+
+                    const neighborTile = state.map.tiles[ny][nx];
+
+                    // Skip if already water or mountain
+                    if (neighborTile.type === TILE_TYPES.WATER || 
+                        neighborTile.type === TILE_TYPES.DEEP_WATER ||
+                        neighborTile.type === TILE_TYPES.MOUNTAIN_SNOW || 
+                        neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK ||
+                        neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK) continue;
+
+                    // Calculate distance with noise
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const caveJaggedNoise = Noise.fbm((nx + 8888) * 0.18, (ny + 8888) * 0.18, 3);
+                    const caveNoisyRadius = baseRadius + caveJaggedNoise * 2 - 1 + caveCenterNoise * 1.2;
+
+                    if (distance > caveNoisyRadius) continue;
+
+                    // Layer assignment for individual caves
+                    if (layer === 0) {
+                        // Innermost: cave floor!
+                        neighborTile.type = TILE_TYPES.CAVE_FLOOR;
+                    } else if (layer <= 2) {
+                        // Middle: stone
+                        neighborTile.type = TILE_TYPES.STONE;
+                    } else {
+                        // Outer: cave wall
+                        neighborTile.type = TILE_TYPES.CAVE_WALL;
+                    }
+                }
+            }
+        }
+    });
+
+    // Step 2.7: Add ore (gold and stone) to caves!
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            if (tile.type === TILE_TYPES.CAVE_FLOOR) {
+                // 80% chance to add ore here! Super dense!
+                if (Math.random() < 0.8) {
+                    // 45% chance gold, 55% stone!
+                    tile.type = Math.random() < 0.45 ? TILE_TYPES.GOLD_ORE : TILE_TYPES.STONE;
+                }
+            }
+        }
+    }
+
+    // Step 2.8: Add RARE dungeons (only 1-2 per world!)
+    const numDungeons = Math.floor(Noise.fbm(11111, 22222, 1) * 2) + 1; // 1-2 dungeons
+    let dungeonsAdded = 0;
+    let attempts = 0;
+    while (dungeonsAdded < numDungeons && attempts < 500) {
+        attempts++;
+        const dungeonX = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+        const dungeonY = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+        const tile = state.map.tiles[dungeonY][dungeonX];
+
+        // Only place dungeon in cave floor area!
+        if (tile.type === TILE_TYPES.CAVE_FLOOR) {
+            // Generate a small dungeon
+            const dungeonRooms = [];
+            const dungeonRoomCount = 3; // Small dungeon!
+            const dungeonMinRoomSize = 4;
+            const dungeonMaxRoomSize = 8;
+            const dungeonWidth = Math.floor(state.map.width * 0.15); // Smaller!
+            const dungeonHeight = Math.floor(state.map.height * 0.15);
+            const dungeonStartX = dungeonX - Math.floor(dungeonWidth / 2);
+            const dungeonStartY = dungeonY - Math.floor(dungeonHeight / 2);
+
+            // Try to place rooms
+            for (let di = 0; di < dungeonRoomCount; di++) {
+                const roomWidth = Math.floor(Math.random() * (dungeonMaxRoomSize - dungeonMinRoomSize)) + dungeonMinRoomSize;
+                const roomHeight = Math.floor(Math.random() * (dungeonMaxRoomSize - dungeonMinRoomSize)) + dungeonMinRoomSize;
+                const roomX = dungeonStartX + Math.floor(Math.random() * (dungeonWidth - roomWidth - 10)) + 5;
+                const roomY = dungeonStartY + Math.floor(Math.random() * (dungeonHeight - roomHeight - 10)) + 5;
+
+                // Check if room overlaps with existing ones
+                let overlaps = false;
+                for (const otherRoom of dungeonRooms) {
+                    if (roomX < otherRoom.x + otherRoom.w + 2 &&
+                        roomX + roomWidth + 2 > otherRoom.x &&
+                        roomY < otherRoom.y + otherRoom.h + 2 &&
+                        roomY + roomHeight + 2 > otherRoom.y) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+
+                if (!overlaps) {
+                    // Carve out the room!
+                    for (let dy = -1; dy <= roomHeight; dy++) {
+                        for (let dx = -1; dx <= roomWidth; dx++) {
+                            const tx = roomX + dx;
+                            const ty = roomY + dy;
+                            if (tx >= 0 && tx < state.map.width && ty >= 0 && ty < state.map.height) {
+                                if (dx < 0 || dx >= roomWidth || dy < 0 || dy >= roomHeight) {
+                                    // Wall
+                                    state.map.tiles[ty][tx].type = TILE_TYPES.DUNGEON_WALL;
+                                } else {
+                                    // Floor
+                                    state.map.tiles[ty][tx].type = TILE_TYPES.DUNGEON_FLOOR;
+                                }
+                            }
+                        }
+                    }
+
+                    // Add room to list
+                    dungeonRooms.push({ x: roomX, y: roomY, w: roomWidth, h: roomHeight, centerX: roomX + Math.floor(roomWidth / 2), centerY: roomY + Math.floor(roomHeight / 2) });
+
+                    // Add lots of ore in dungeon rooms!
+                    for (let oi = 0; oi < 15; oi++) { // More ore!
+                        const oreX = roomX + Math.floor(Math.random() * (roomWidth - 2)) + 1;
+                        const oreY = roomY + Math.floor(Math.random() * (roomHeight - 2)) + 1;
+                        if (oreX >= 0 && oreX < state.map.width && oreY >= 0 && oreY < state.map.height) {
+                            const oreTile = state.map.tiles[oreY][oreX];
+                            if (oreTile.type === TILE_TYPES.DUNGEON_FLOOR) {
+                                // 60% gold, 40% stone!
+                                oreTile.type = Math.random() < 0.6 ? TILE_TYPES.GOLD_ORE : TILE_TYPES.STONE;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Connect rooms with corridors!
+            for (let ci = 1; ci < dungeonRooms.length; ci++) {
+                const prevRoom = dungeonRooms[ci - 1];
+                const currRoom = dungeonRooms[ci];
+                const startX = prevRoom.centerX;
+                const startY = prevRoom.centerY;
+                const endX = currRoom.centerX;
+                const endY = currRoom.centerY;
+
+                // Horizontal first
+                for (let hx = Math.min(startX, endX); hx <= Math.max(startX, endX); hx++) {
+                    if (hx >= 0 && hx < state.map.width && startY >= 0 && startY < state.map.height) {
+                        const corridorTile = state.map.tiles[startY][hx];
+                        if (corridorTile.type !== TILE_TYPES.DUNGEON_FLOOR) {
+                            corridorTile.type = TILE_TYPES.DUNGEON_FLOOR;
+                        }
+                    }
+                }
+
+                // Then vertical
+                for (let hy = Math.min(startY, endY); hy <= Math.max(startY, endY); hy++) {
+                    if (endX >= 0 && endX < state.map.width && hy >= 0 && hy < state.map.height) {
+                        const corridorTile = state.map.tiles[hy][endX];
+                        if (corridorTile.type !== TILE_TYPES.DUNGEON_FLOOR) {
+                            corridorTile.type = TILE_TYPES.DUNGEON_FLOOR;
+                        }
+                    }
+                }
+            }
+
+            // Place cave entrance on first room!
+            if (dungeonRooms.length > 0) {
+                const entranceRoom = dungeonRooms[0];
+                state.map.tiles[entranceRoom.centerY][entranceRoom.centerX].type = TILE_TYPES.CAVE_ENTRANCE;
+            }
+
+            // Place cave exit on last room!
+            if (dungeonRooms.length > 1) {
+                const exitRoom = dungeonRooms[dungeonRooms.length - 1];
+                state.map.tiles[exitRoom.centerY][exitRoom.centerX].type = TILE_TYPES.CAVE_EXIT;
+            }
+
+            // Add skeletons in dungeon rooms!
+            for (let si = 1; si < dungeonRooms.length; si++) {
+                const skelRoom = dungeonRooms[si];
+                const skeletonCount = Math.floor(Math.random() * 3) + 1; // 1-3 per room
+                for (let sk = 0; sk < skeletonCount; sk++) {
+                    const sx = skelRoom.x + Math.floor(Math.random() * (skelRoom.w - 2)) + 1;
+                    const sy = skelRoom.y + Math.floor(Math.random() * (skelRoom.h - 2)) + 1;
+                    state.enemies.push({
+                        x: sx + 0.5,
+                        y: sy + 0.5,
+                        hp: 30,
+                        maxHp: 30,
+                        attack: 10,
+                        detectionRadius: 8,
+                        target: null,
+                        lastAttackTime: 0
+                    });
+                }
+            }
+
+            dungeonsAdded++;
+        }
+    }
+
     // Step 3: Generate gold ore ONLY on mountain edges
     const goldPositions = new Set();
     for (let y = 0; y < state.map.height; y++) {
@@ -717,64 +1024,13 @@ function initMap() {
         }
     }
     
-    // Step 5: Add cave entrances
-    const numCaveEntrances = 3; // Добавляем 3 входа в пещеру
-    for (let i = 0; i < numCaveEntrances; i++) {
-        let placed = false;
-        let attempts = 0;
-        while (!placed && attempts < 10000) { // Увеличиваем количество попыток
-            const x = Math.floor(Math.random() * (state.map.width - 100)) + 50;
-            const y = Math.floor(Math.random() * (state.map.height - 100)) + 50;
-            const tile = state.map.tiles[y][x];
-            // Размещаем вход в пещеру на траве или земле
-            if ((tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || 
-                 tile.type === TILE_TYPES.LIGHT_GRASS || tile.type === TILE_TYPES.SOIL)) {
-                // Проверяем, есть ли гора НАПРЯМУЮ рядом (в соседних клетках)
-                let adjacentToMountain = false;
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue; // Не проверяем саму клетку
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
-                            const neighbor = state.map.tiles[ny][nx];
-                            if (neighbor.type === TILE_TYPES.MOUNTAIN_ROCK || 
-                                neighbor.type === TILE_TYPES.MOUNTAIN_ROCK_DARK) {
-                                adjacentToMountain = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (adjacentToMountain) break;
-                }
-                if (adjacentToMountain) {
-                    state.map.tiles[y][x].type = TILE_TYPES.CAVE_ENTRANCE;
-                    // Очищаем место вокруг входа (чтобы не было деревьев)
-                    for (let dy = -2; dy <= 2; dy++) {
-                        for (let dx = -2; dx <= 2; dx++) {
-                            const nx = x + dx;
-                            const ny = y + dy;
-                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
-                                const neighbor = state.map.tiles[ny][nx];
-                                if (neighbor.type === TILE_TYPES.TREE) {
-                                    neighbor.type = TILE_TYPES.GRASS;
-                                }
-                            }
-                        }
-                    }
-                    placed = true;
-                }
-            }
-            attempts++;
-        }
-    }
-
+    // Step 5: Save overworld map!
     state.currentMap = 'overworld';
     state.overworldMap = {
         tiles: JSON.parse(JSON.stringify(state.map.tiles)),
         width: state.map.width,
         height: state.map.height,
-        enemies: []
+        enemies: JSON.parse(JSON.stringify(state.enemies)) // Save overworld enemies!
     };
     
     state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
@@ -782,22 +1038,8 @@ function initMap() {
 
 // сохранение карты
 function saveCurrentMap() {
-    // Сохраняем текущее состояние карты
-    const savedMap = {
-        tiles: JSON.parse(JSON.stringify(state.map.tiles)), // Глубокая копия тайлов
-        width: state.map.width,
-        height: state.map.height,
-        enemies: JSON.parse(JSON.stringify(state.enemies)) // Save enemies too!
-    };
-    if (state.currentMap === 'overworld') {
-        state.overworldMap = savedMap;
-    } else {
-        // Save dungeon entrance too!
-        if (state.caveMap && state.caveMap.dungeonEntrance) {
-            savedMap.dungeonEntrance = state.caveMap.dungeonEntrance;
-        }
-        state.caveMap = savedMap;
-    }
+    // Do NOT overwrite saved maps! They should stay the same forever once generated!
+    // We only save enemies or other dynamic data if needed, but tiles stay the same!
 }
 
 // генерация данжена
@@ -1788,10 +2030,36 @@ function isPathClearOfWater(startX, startY, endX, endY) {
 
 function initEntities() {
     state.nextJobId = 1;
+    
+    // Find valid land tiles to spawn
+    const landTiles = [];
+    for (let y = 0; y < state.map.height; y++) {
+        for (let x = 0; x < state.map.width; x++) {
+            const tile = state.map.tiles[y][x];
+            if (!tile.type.solid && tile.type !== TILE_TYPES.WATER && tile.type !== TILE_TYPES.DEEP_WATER) {
+                landTiles.push({x, y});
+            }
+        }
+    }
+    
+    let spawnX = state.map.width / 2;
+    let spawnY = state.map.height / 2;
+    
+    if (landTiles.length > 0) {
+        const randomBase = landTiles[Math.floor(Math.random() * landTiles.length)];
+        spawnX = randomBase.x;
+        spawnY = randomBase.y;
+    }
+    
     state.entities.push({
-        id: 1, name: "Admin", x: 50.5, y: 50.5, color: '#90caf9', target: null, job: null,
+        id: 1, name: "Admin", x: spawnX + 0.5, y: spawnY + 0.5, color: '#90caf9', target: null, job: null,
         speed: 0.08, needs: { food: 100, rest: 100 }, path: [], currentSpeedModifier: 1.0, statusMessages: [], taskQueue: []
     });
+    
+    // Set camera to spawn position
+    state.camera.x = -(spawnX * state.map.tileSize);
+    state.camera.y = -(spawnY * state.map.tileSize);
+    
     updateCharacterMenu();
 }
 
@@ -1998,7 +2266,7 @@ window.addEventListener('mousedown', (e) => {
     // Don't handle map events if we're dragging widget or panel
     if (isDraggingWidget || isDraggingPanel) return;
     
-    if (e.target.closest('#top-bar') || e.target.closest('#bottom-menu') || e.target.closest('#inspect-panel') || e.target.closest('#character-menu') || e.target.closest('#regen-btn') || e.target.closest('#architect-menu') || e.target.closest('#inspect-widget')) return;
+    if (e.target.closest('#top-bar') || e.target.closest('#bottom-menu') || e.target.closest('#inspect-panel') || e.target.closest('#character-menu') || e.target.closest('#regen-btn') || e.target.closest('#architect-menu') || e.target.closest('#inspect-widget') || e.target.closest('#action-panel') || e.target.closest('#cancel-all-btn')) return;
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
         state.camera.isDragging = true;
         state.camera.transition.active = false; // остановить переход при перетаскивании
@@ -2462,9 +2730,6 @@ function handleCaveInteraction() {
     if (!nearbyCaveTile) return;
     const tile = nearbyCaveTile;
     
-    // Save current map state
-    saveCurrentMap();
-    
     if (state.currentMap === 'overworld' && tile.type === TILE_TYPES.CAVE_ENTRANCE) {
         // Entering cave from overworld
         state.caveEntrance = { x: tile.x, y: tile.y };
@@ -2472,9 +2737,10 @@ function handleCaveInteraction() {
         if (!state.caveMap) {
             initCaveMap();
         } else {
-            state.map.tiles = state.caveMap.tiles;
+            // Load saved cave map (deep copy!)
+            state.map.tiles = JSON.parse(JSON.stringify(state.caveMap.tiles));
             state.currentMap = 'cave';
-            state.enemies = state.caveMap.enemies ? JSON.parse(JSON.stringify(state.caveMap.enemies)) : [];
+            state.enemies = JSON.parse(JSON.stringify(state.caveMap.enemies));
         }
         
         // Find spawn in cave NOT in dungeon!
@@ -2513,9 +2779,10 @@ function handleCaveInteraction() {
     } else if (state.currentMap === 'cave' && tile.type === TILE_TYPES.CAVE_EXIT) {
         // Exit cave to overworld
         if (state.overworldMap) {
-            state.map.tiles = state.overworldMap.tiles;
+            // Load saved overworld map (deep copy!)
+            state.map.tiles = JSON.parse(JSON.stringify(state.overworldMap.tiles));
             state.currentMap = 'overworld';
-            state.enemies = state.overworldMap.enemies ? JSON.parse(JSON.stringify(state.overworldMap.enemies)) : [];
+            state.enemies = JSON.parse(JSON.stringify(state.overworldMap.enemies));
         }
         
         if (state.caveEntrance) {
@@ -2983,6 +3250,24 @@ function update() {
     }
     
     state.time.tick++;
+    
+    // Regrow depleted bushes
+    const bushesToRegrow = [];
+    state.depletedBushes = state.depletedBushes.filter(bush => {
+        const tile = state.map.tiles[bush.y][bush.x];
+        if (tile.type === TILE_TYPES.FOOD_BUSH_DEPLETED && state.time.tick >= tile.regrowTime) {
+            tile.type = TILE_TYPES.FOOD_BUSH;
+            delete tile.regrowTime;
+            // Mark chunk as dirty to redraw
+            const chunkX = Math.floor(bush.x / state.map.chunkSize);
+            const chunkY = Math.floor(bush.y / state.map.chunkSize);
+            if (state.map.chunks[chunkY] && state.map.chunks[chunkY][chunkX]) {
+                state.map.chunks[chunkY][chunkX].dirty = true;
+            }
+            return false; // Remove from depleted list
+        }
+        return true; // Keep in list if not ready yet
+    });
     if (state.time.tick % 60 === 0) {
         state.time.minute++;
         if (state.time.minute >= 60) {
@@ -3114,9 +3399,24 @@ function update() {
                 const nextY = ent.y + (dy / dist) * ent.speed * speedMult;
                 const nextTX = Math.floor(nextX);
                 const nextTY = Math.floor(nextY);
+                const currentTX = Math.floor(ent.x);
+                const currentTY = Math.floor(ent.y);
+                
+                // Check if we're on a bridge and trying to move into water
+                let canMove = true;
+                if (currentTX >= 0 && currentTX < state.map.width && currentTY >= 0 && currentTY < state.map.height) {
+                    const currentTile = state.map.tiles[currentTY][currentTX];
+                    if (currentTile.type === TILE_TYPES.BRIDGE &&
+                        nextTX >= 0 && nextTX < state.map.width && nextTY >= 0 && nextTY < state.map.height) {
+                        const nextTile = state.map.tiles[nextTY][nextTX];
+                        if (nextTile.type === TILE_TYPES.WATER || nextTile.type === TILE_TYPES.DEEP_WATER) {
+                            canMove = false;
+                        }
+                    }
+                }
                 
                 // Only check occupancy if moving to a DIFFERENT tile than current
-                if (nextTX !== Math.floor(ent.x) || nextTY !== Math.floor(ent.y)) {
+                if (nextTX !== currentTX || nextTY !== currentTY) {
                     if (isTileOccupied(nextTX, nextTY, ent)) {
                         // If it's a manual move or a job, we wait. 
                         // If it's just wandering, we might want to cancel.
@@ -3124,7 +3424,9 @@ function update() {
                     }
                 }
                 
-                ent.x = nextX; ent.y = nextY;
+                if (canMove) {
+                    ent.x = nextX; ent.y = nextY;
+                }
             }
         } else if (ent.job) {
                 // Проверяем, что job ещё существует и не null
@@ -3204,9 +3506,18 @@ function update() {
                             state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
                             const woodGain = Math.floor(Math.random() * 16) + 81;
                             state.resources.wood += woodGain;
+                            updateResourceUI();
                         }
                         else if (job.type === 'harvest') {
-                            state.map.tiles[ty][tx].type = TILE_TYPES.GRASS;
+                            state.map.tiles[ty][tx].type = TILE_TYPES.FOOD_BUSH_DEPLETED;
+                            state.map.tiles[ty][tx].regrowTime = state.time.tick + 3000; // Regrow after 3000 ticks (about 50 seconds at 60 ticks per second)
+                            state.depletedBushes.push({ x: tx, y: ty });
+                            // Mark chunk as dirty to redraw
+                            const chunkX = Math.floor(tx / state.map.chunkSize);
+                            const chunkY = Math.floor(ty / state.map.chunkSize);
+                            if (state.map.chunks[chunkY] && state.map.chunks[chunkY][chunkX]) {
+                                state.map.chunks[chunkY][chunkX].dirty = true;
+                            }
                             const foodGain = Math.floor(Math.random() * 10) + 15;
                             state.resources.food += foodGain;
                             updateResourceUI();
@@ -3691,58 +4002,26 @@ function getJobTypeName(job) {
 
 // Initialize event delegation
 function initCancelButtons() {
-    console.log('Initializing cancel button listeners...');
     const actionList = document.getElementById('action-list');
-    if (!actionList) {
-        console.log('ERROR: action-list not found!');
-        return;
-    }
+    if (!actionList) return;
     
-    console.log('action-list found! Adding listeners...');
-    
-    // Global click listener
-    actionList.addEventListener('click', (e) => {
-        console.log('=== action-list CLICK ===');
-        console.log('Target:', e.target);
-        
+    // Handle both click and mousedown
+    const handleCancelClick = (e) => {
         const cancelBtn = e.target.closest('.cancel-task-btn');
         if (cancelBtn) {
-            console.log('Cancel button found!');
             e.stopPropagation();
             e.preventDefault();
             
             const entityId = parseInt(cancelBtn.getAttribute('data-entity-id'));
             const jobId = parseInt(cancelBtn.getAttribute('data-job-id'));
-            console.log('Calling cancelTask with:', entityId, jobId);
             
             cancelTask(entityId, jobId);
         }
-    });
+    };
     
-    actionList.addEventListener('mousedown', (e) => {
-        console.log('=== action-list MOUSEDOWN ===');
-        console.log('Target:', e.target);
-    });
-    
-    console.log('Cancel button listeners initialized!');
+    actionList.addEventListener('click', handleCancelClick);
+    actionList.addEventListener('mousedown', handleCancelClick);
 }
-
-// Global debug listener for all clicks
-document.addEventListener('mousedown', (e) => {
-    console.log('=== GLOBAL MOUSEDOWN ===');
-    console.log('Target:', e.target);
-    console.log('Element:', e.target.closest('.cancel-task-btn'));
-    
-    // Temporarily hide cursor to get correct element from point
-    const customCursor = document.getElementById('custom-cursor');
-    if (customCursor) {
-        customCursor.style.visibility = 'hidden';
-        console.log('Element from point:', document.elementFromPoint(e.clientX, e.clientY));
-        customCursor.style.visibility = 'visible';
-    } else {
-        console.log('Element from point:', document.elementFromPoint(e.clientX, e.clientY));
-    }
-});
 
 // Initialize immediately
 setTimeout(initCancelButtons, 100);
@@ -3891,31 +4170,615 @@ window.cancelAllTasks = function() {
     updateActionPanel();
 };
 
-window.addEventListener('resize', resize);
-resize(); initMap(); initEntities();
-// Инициализируем предыдущие значения
-state.prevResources = {
-    silver: state.resources.silver,
-    stone: state.resources.stone,
-    wood: state.resources.wood,
-    food: state.resources.food,
-    gold: state.resources.gold
-};
-// Заполняем контейнеры без анимации
-['silver', 'stone', 'wood', 'gold', 'food'].forEach(name => {
-    const containerId = `${name}-count`;
-    const container = document.getElementById(containerId);
-    if (container) {
-        const value = state.resources[name] || 0;
-        const valueStr = value.toString();
-        container.innerHTML = '';
-        for (let i = 0; i < valueStr.length; i++) {
-            const digitEl = document.createElement('div');
-            digitEl.className = 'counter-digit';
-            digitEl.textContent = valueStr[i];
-            container.appendChild(digitEl);
+// Helper to update loading screen
+function updateLoading(progress, text) {
+    const progressBar = document.getElementById('loading-progress-bar');
+    const loadingText = document.getElementById('loading-text');
+    if (progressBar) {
+        progressBar.style.width = `${progress}%`;
+    }
+    if (loadingText) {
+        loadingText.textContent = text;
+    }
+}
+
+// Initialize game with loading screen
+async function initGame() {
+    updateLoading(5, 'Инициализация...');
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(10, 'Генерация ландшафта...');
+    initMapPartial(1); // Terrain generation
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(25, 'Создание гор...');
+    initMapPartial(2); // Mountains
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(40, 'Размещение руды...');
+    initMapPartial(3); // Gold ore
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(55, 'Генерация лесов...');
+    initMapPartial(4); // Trees and stones
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(70, 'Расстановка кустов...');
+    initMapPartial(5); // Bushes
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(85, 'Добавление пещер...');
+    initMapPartial(6); // Caves
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(90, 'Предварительная отрисовка карты...');
+    const totalChunks = state.map.chunks.length * state.map.chunks[0].length;
+    let processedChunks = 0;
+    for (let cy = 0; cy < state.map.chunks.length; cy++) {
+        for (let cx = 0; cx < state.map.chunks[cy].length; cx++) {
+            const chunk = state.map.chunks[cy][cx];
+            updateChunk(chunk);
+            processedChunks++;
+            const progress = 90 + (processedChunks / totalChunks) * 8;
+            updateLoading(progress, 'Предварительная отрисовка карты...');
+            if (processedChunks % 10 === 0) {
+                await new Promise(r => setTimeout(r, 1)); // Yield to browser to update UI
+            }
         }
     }
-});
-state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
-requestAnimationFrame(render);
+    
+    updateLoading(98, 'Инициализация персонажей...');
+    initEntities();
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(99, 'Подготовка ресурсов...');
+    // Инициализируем предыдущие значения
+    state.prevResources = {
+        silver: state.resources.silver,
+        stone: state.resources.stone,
+        wood: state.resources.wood,
+        food: state.resources.food,
+        gold: state.resources.gold
+    };
+    // Заполняем контейнеры без анимации
+    ['silver', 'stone', 'wood', 'gold', 'food'].forEach(name => {
+        const containerId = `${name}-count`;
+        const container = document.getElementById(containerId);
+        if (container) {
+            const value = state.resources[name] || 0;
+            const valueStr = value.toString();
+            container.innerHTML = '';
+            for (let i = 0; i < valueStr.length; i++) {
+                const digitEl = document.createElement('div');
+                digitEl.className = 'counter-digit';
+                digitEl.textContent = valueStr[i];
+                container.appendChild(digitEl);
+            }
+        }
+    });
+    await new Promise(r => setTimeout(r, 50));
+    
+    updateLoading(100, 'Готово!');
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Hide loading screen
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.classList.add('hidden');
+    }
+    
+    // Start game loop
+    requestAnimationFrame(render);
+}
+
+// Modified initMap that can run in steps
+function initMapPartial(step) {
+    if (step === 1) {
+        // Step 1: Initial terrain
+        state.map.tiles = [];
+        state.map.explored = new Uint8Array(state.map.width * state.map.height);
+        const seedX = Math.random() * 1000;
+        const seedY = Math.random() * 1000;
+        for (let y = 0; y < state.map.height; y++) {
+            const row = [];
+            for (let x = 0; x < state.map.width; x++) {
+                const nx = x + seedX;
+                const ny = y + seedY;
+                const continent = Noise.fbm(nx * 0.003, ny * 0.003, 3);
+                const mountainNoise = Noise.fbm(nx * 0.008, ny * 0.008, 4);
+                const detail = Noise.fbm(nx * 0.02, ny * 0.02, 4);
+                // Less boost to keep sea level correct
+                let elevation = continent * 0.85 + detail * 0.10 + mountainNoise * 0.05;
+                // Normalize back to [0, 1] range (less aggressive)
+                elevation = Math.min(1, Math.max(0, elevation * 0.95));
+                const moisture = Noise.fbm(nx * 0.01 + 2000, ny * 0.01 + 2000, 3);
+                let type;
+                const sea_level = 0.42;
+                if (elevation < sea_level) {
+                    if (elevation < sea_level - 0.15) type = TILE_TYPES.DEEP_WATER;
+                    else type = TILE_TYPES.WATER;
+                } else {
+                    if (elevation < sea_level + 0.02) type = TILE_TYPES.SAND; 
+                    else if (elevation > 0.70) type = TILE_TYPES.SOIL; // We'll replace with mountain layers later
+                    else {
+                        if (moisture > 0.6) type = TILE_TYPES.LIGHT_GRASS;
+                        else if (moisture > 0.44) type = TILE_TYPES.GRASS;
+                        else if (moisture > 0.4) type = TILE_TYPES.DARK_GRASS;
+                        else if (moisture > 0.37) type = TILE_TYPES.SOIL;
+                        else type = TILE_TYPES.SAND; 
+                    }
+                }
+                const distFromCenter = Math.sqrt(Math.pow(x - state.map.width / 2, 2) + Math.pow(y - state.map.height / 2, 2));
+                if (distFromCenter < 5) {
+                    if (type.solid || type === TILE_TYPES.WATER || type === TILE_TYPES.DEEP_WATER) type = TILE_TYPES.GRASS;
+                }
+                row.push({ type, x, y, elevation, moisture });
+            }
+            state.map.tiles.push(row);
+        }
+        const queue = [];
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                if (tile.type === TILE_TYPES.WATER || tile.type === TILE_TYPES.DEEP_WATER) {
+                    let isShore = false;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const ny = y + dy;
+                            const nx = x + dx;
+                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                const neighbor = state.map.tiles[ny][nx];
+                                if (neighbor.type !== TILE_TYPES.WATER && neighbor.type !== TILE_TYPES.DEEP_WATER) {
+                                    isShore = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isShore) break;
+                    }
+                    if (isShore) { tile.shoreDist = 0; queue.push({x, y}); }
+                    else tile.shoreDist = Infinity;
+                }
+            }
+        }
+        let head = 0;
+        while(head < queue.length) {
+            const p = queue[head++];
+            const currentDist = state.map.tiles[p.y][p.x].shoreDist;
+            const dirs = [{dx:1, dy:0}, {dx:-1, dy:0}, {dx:0, dy:1}, {dx:0, dy:-1}];
+            for (const d of dirs) {
+                const nx = p.x + d.dx;
+                const ny = p.y + d.dy;
+                if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                    const neighbor = state.map.tiles[ny][nx];
+                    if ((neighbor.type === TILE_TYPES.WATER || neighbor.type === TILE_TYPES.DEEP_WATER) && neighbor.shoreDist === Infinity) {
+                        neighbor.shoreDist = currentDist + 1;
+                        queue.push({x: nx, y: ny});
+                    }
+                }
+            }
+        }
+        state.map.chunks = [];
+        const chunksX = Math.ceil(state.map.width / state.map.chunkSize);
+        const chunksY = Math.ceil(state.map.height / state.map.chunkSize);
+        for (let cy = 0; cy < chunksY; cy++) {
+            const row = [];
+            for (let cx = 0; cx < chunksX; cx++) {
+                const canvas = document.createElement('canvas');
+                canvas.width = state.map.chunkSize * state.map.tileSize;
+                canvas.height = state.map.chunkSize * state.map.tileSize;
+                row.push({ cx, cy, canvas, ctx: canvas.getContext('2d'), dirty: true });
+            }
+            state.map.chunks.push(row);
+        }
+    } else if (step === 2) {
+        // Step 2: Mountains
+        // Step 1: Generate mountain ridge lines (long, narrow ranges)
+        const ridges = [];
+        const numRidges = Math.floor(Noise.fbm(10000, 20000, 1) * 2) + 1; // 1-3 ridges
+        
+        for (let r = 0; r < numRidges; r++) {
+            // Start with a random high elevation point
+            let startX = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+            let startY = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+            let bestScore = -1;
+            
+            // Find a good starting point with high elevation
+            for (let i = 0; i < 100; i++) {
+                const testX = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+                const testY = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+                if (state.map.tiles[testY][testX].elevation > bestScore) {
+                    bestScore = state.map.tiles[testY][testX].elevation;
+                    startX = testX;
+                    startY = testY;
+                }
+            }
+            
+            // Generate ridge path
+            const ridge = [];
+            let currentX = startX;
+            let currentY = startY;
+            let angle = Math.random() * Math.PI * 2;
+            const ridgeLength = 60 + Math.floor(Math.random() * 100); // 60-160 tiles long
+            
+            for (let i = 0; i < ridgeLength; i++) {
+                ridge.push({ x: currentX, y: currentY });
+                
+                // Wiggle the angle slightly
+                angle += (Math.random() - 0.5) * 0.4;
+                
+                // Move forward
+                currentX += Math.cos(angle) * 1.5;
+                currentY += Math.sin(angle) * 1.5;
+                
+                // Wrap around or stop at edges
+                if (currentX < 20 || currentX > state.map.width - 20 || 
+                    currentY < 20 || currentY > state.map.height - 20) {
+                    break;
+                }
+            }
+            
+            ridges.push(ridge);
+        }
+        
+        // Step 1.5: Also add individual mountain centers (regular mountains)
+        const mountainCenters = [];
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                if (tile.elevation > 0.82) {
+                    mountainCenters.push({ x, y, elevation: tile.elevation });
+                }
+            }
+        }
+        
+        // Step 2: First generate ridges, then generate individual mountains
+        ridges.forEach(ridge => {
+            // Calculate maximum layer size for this ridge
+            const maxLayerSize = 4 + Math.floor(Math.random() * 5); // 4-8 layers (narrow!)
+            
+            for (let pointIdx = 0; pointIdx < ridge.length; pointIdx++) {
+                const point = ridge[pointIdx];
+                const distFromStart = pointIdx;
+                const distFromEnd = ridge.length - 1 - pointIdx;
+                const localMax = Math.min(distFromStart, distFromEnd);
+                const peakFactor = localMax > ridge.length / 4 ? 1 : localMax / (ridge.length / 4);
+                
+                for (let layer = 0; layer <= maxLayerSize; layer++) {
+                    const baseRadius = (maxLayerSize - layer) * peakFactor;
+                    for (let dy = -Math.ceil(baseRadius + 2); dy <= Math.ceil(baseRadius + 2); dy++) {
+                        for (let dx = -Math.ceil(baseRadius + 2); dx <= Math.ceil(baseRadius + 2); dx++) {
+                            const nx = Math.floor(point.x) + dx;
+                            const ny = Math.floor(point.y) + dy;
+                            
+                            if (nx < 0 || nx >= state.map.width || ny < 0 || ny >= state.map.height) continue;
+                            
+                            const neighborTile = state.map.tiles[ny][nx];
+                            
+                            // Skip if already a higher layer or water
+                            if (neighborTile.type === TILE_TYPES.WATER || 
+                                neighborTile.type === TILE_TYPES.DEEP_WATER ||
+                                neighborTile.type === TILE_TYPES.MOUNTAIN_SNOW || 
+                                neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK ||
+                                neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK) continue;
+                            
+                            // Calculate distance from ridge point
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            const jaggedNoise = Noise.fbm((nx + 5000) * 0.2, (ny + 5000) * 0.2, 3);
+                            const noisyRadius = baseRadius + jaggedNoise * 1.5 - 0.75;
+                            
+                            if (distance > noisyRadius) continue;
+                            
+                            // Strict layer assignment
+                            if (layer === 0 && peakFactor > 0.7 && jaggedNoise > 0.55) {
+                                // A little snow on peaks only
+                                neighborTile.type = TILE_TYPES.MOUNTAIN_SNOW;
+                            } else if (layer <= 1 && peakFactor > 0.5) {
+                                // Inner core: Dark mountain rock (unbreakable)
+                                neighborTile.type = TILE_TYPES.MOUNTAIN_ROCK_DARK;
+                            } else if (layer <= 3) {
+                                // Middle layer: Mountain rock (10x slower)
+                                neighborTile.type = TILE_TYPES.MOUNTAIN_ROCK;
+                            } else {
+                                // Outer layer: Stone (normal speed)
+                                neighborTile.type = TILE_TYPES.STONE;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Step 2.5: Now generate individual mountains
+        mountainCenters.forEach(center => {
+            const maxLayerSize = 10 + Math.floor((center.elevation - 0.82) * 40); // 10-42 size
+            const centerNoise = Noise.fbm(center.x * 0.05, center.y * 0.05, 2);
+            
+            for (let layer = 0; layer <= maxLayerSize; layer++) {
+                const baseRadius = maxLayerSize - layer;
+                for (let dy = -baseRadius - 2; dy <= baseRadius + 2; dy++) {
+                    for (let dx = -baseRadius - 2; dx <= baseRadius + 2; dx++) {
+                        const nx = center.x + dx;
+                        const ny = center.y + dy;
+                        
+                        if (nx < 0 || nx >= state.map.width || ny < 0 || ny >= state.map.height) continue;
+                        
+                        const neighborTile = state.map.tiles[ny][nx];
+                        
+                        // Skip if already a higher layer or water
+                        if (neighborTile.type === TILE_TYPES.WATER || 
+                            neighborTile.type === TILE_TYPES.DEEP_WATER ||
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_SNOW || 
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK_DARK ||
+                            neighborTile.type === TILE_TYPES.MOUNTAIN_ROCK) continue;
+                        
+                        // Calculate distance with subtle noise
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const jaggedNoise = Noise.fbm((nx + 5000) * 0.15, (ny + 5000) * 0.15, 3);
+                        const noisyRadius = baseRadius + jaggedNoise * 2.5 - 1.25 + centerNoise * 1.5;
+                        
+                        if (distance > noisyRadius) continue;
+                        
+                        // Strict layer assignment
+                        if (layer === 0 && maxLayerSize >= 8 && jaggedNoise > 0.55) {
+                            // A little snow on peaks only
+                            neighborTile.type = TILE_TYPES.MOUNTAIN_SNOW;
+                        } else if (layer <= 3 && maxLayerSize >= 7) {
+                            // Inner core: Dark mountain rock (unbreakable)
+                            neighborTile.type = TILE_TYPES.MOUNTAIN_ROCK_DARK;
+                        } else if (layer <= 7) {
+                            // Middle layer: Mountain rock (10x slower)
+                            neighborTile.type = TILE_TYPES.MOUNTAIN_ROCK;
+                        } else {
+                            // Outer layer: Stone (normal speed)
+                            neighborTile.type = TILE_TYPES.STONE;
+                        }
+                    }
+                }
+            }
+        });
+    } else if (step === 3) {
+        // Step 3: Gold ore
+        const goldPositions = new Set();
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                // Check if this tile is a mountain edge tile (stone/mountain rock adjacent to non-mountain)
+                const isMountainTile = tile.type === TILE_TYPES.STONE || tile.type === TILE_TYPES.MOUNTAIN_ROCK;
+                if (isMountainTile) {
+                    let hasNonMountainNeighbor = false;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                const neighbor = state.map.tiles[ny][nx];
+                                const neighborIsNotMountain = neighbor.type !== TILE_TYPES.STONE && 
+                                                              neighbor.type !== TILE_TYPES.MOUNTAIN_ROCK && 
+                                                              neighbor.type !== TILE_TYPES.MOUNTAIN_ROCK_DARK && 
+                                                              neighbor.type !== TILE_TYPES.MOUNTAIN_SNOW;
+                                if (neighborIsNotMountain) {
+                                    hasNonMountainNeighbor = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasNonMountainNeighbor) break;
+                    }
+                    
+                    if (hasNonMountainNeighbor && Math.random() < 0.15) { // 15% chance per edge tile
+                        const key = `${x},${y}`;
+                        goldPositions.add(key);
+                        state.map.tiles[y][x].type = TILE_TYPES.GOLD_ORE;
+                    }
+                }
+            }
+        }
+    } else if (step === 4) {
+        // Step 4: Trees and stones
+        // Step 4: Generate normal stone deposits away from mountains
+        const stoneNoiseScale = 0.018;
+        const stonePositions = new Set();
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                const isNearMountain = [TILE_TYPES.STONE, TILE_TYPES.MOUNTAIN_ROCK, TILE_TYPES.MOUNTAIN_ROCK_DARK, TILE_TYPES.MOUNTAIN_SNOW].includes(tile.type);
+                if (!isNearMountain && tile.type === TILE_TYPES.SOIL) {
+                    const stoneValue = Noise.fbm(x * stoneNoiseScale + 10000, y * stoneNoiseScale + 10000, 3);
+                    let stoneChance = 0;
+                    if (stoneValue > 0.75) stoneChance = 0.85;
+                    else if (stoneValue > 0.65) stoneChance = 0.7;
+                    else if (stoneValue > 0.55) stoneChance = 0.45;
+                    
+                    if (Math.random() < stoneChance) {
+                        const key = `${x},${y}`;
+                        stonePositions.add(key);
+                        state.map.tiles[y][x].type = TILE_TYPES.STONE;
+                    }
+                }
+            }
+        }
+        
+        // Generate Forest biome with trees (rare forests)
+        const treeNoiseScale = 0.02; // Larger scale = bigger, rarer forests
+        const treePositions = new Set();
+        
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                if (tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || tile.type === TILE_TYPES.LIGHT_GRASS) {
+                    // Use noise to determine forest density
+                    const forestValue = Noise.fbm(x * treeNoiseScale + 8000, y * treeNoiseScale + 8000, 3);
+                    
+                    // Higher noise = more trees (rare forests)
+                    let treeChance = 0;
+                    if (forestValue > 0.75) {
+                        treeChance = 0.6; // Dense forest
+                    } else if (forestValue > 0.65) {
+                        treeChance = 0.4; // Medium forest
+                    } else if (forestValue > 0.55) {
+                        treeChance = 0.2; // Sparse forest
+                    }
+                    
+                    if (Math.random() < treeChance) {
+                        const key = `${x},${y}`;
+                        
+                        // Check if there are no trees too close
+                        let canPlaceTree = true;
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const checkKey = `${x + dx},${y + dy}`;
+                                if (treePositions.has(checkKey)) {
+                                    canPlaceTree = false;
+                                    break;
+                                }
+                            }
+                            if (!canPlaceTree) break;
+                        }
+                        
+                        if (canPlaceTree) {
+                            treePositions.add(key);
+                            state.map.tiles[y][x].type = TILE_TYPES.TREE;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (step === 5) {
+        // Step 5: Bushes
+        const bushPositions = new Set();
+        for (let y = 0; y < state.map.height; y++) {
+            for (let x = 0; x < state.map.width; x++) {
+                const tile = state.map.tiles[y][x];
+                if (tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || tile.type === TILE_TYPES.LIGHT_GRASS) {
+                    // Check if there's a tree nearby
+                    let hasNearbyTree = false;
+                    for (let dy = -3; dy <= 3; dy++) {
+                        for (let dx = -3; dx <= 3; dx++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                const neighbor = state.map.tiles[ny][nx];
+                                if (neighbor.type === TILE_TYPES.TREE) {
+                                    hasNearbyTree = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasNearbyTree) break;
+                    }
+
+                    if (hasNearbyTree && Math.random() < 0.02) { // 2% chance per valid tile
+                        const key = `${x},${y}`;
+                        bushPositions.add(key);
+                        state.map.tiles[y][x].type = TILE_TYPES.FOOD_BUSH;
+                    }
+                }
+            }
+        }
+    } else if (step === 6) {
+        // Step 6: Caves and finish
+        const numCaveEntrances = 3; // Добавляем 3 входа в пещеру
+        for (let i = 0; i < numCaveEntrances; i++) {
+            let placed = false;
+            let attempts = 0;
+            while (!placed && attempts < 10000) { // Увеличиваем количество попыток
+                const x = Math.floor(Math.random() * (state.map.width - 100)) + 50;
+                const y = Math.floor(Math.random() * (state.map.height - 100)) + 50;
+                const tile = state.map.tiles[y][x];
+                // Размещаем вход в пещеру на траве или земле
+                if ((tile.type === TILE_TYPES.GRASS || tile.type === TILE_TYPES.DARK_GRASS || 
+                     tile.type === TILE_TYPES.LIGHT_GRASS || tile.type === TILE_TYPES.SOIL)) {
+                    // Проверяем, есть ли гора НАПРЯМУЮ рядом (в соседних клетках)
+                    let adjacentToMountain = false;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue; // Не проверяем саму клетку
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                const neighbor = state.map.tiles[ny][nx];
+                                if (neighbor.type === TILE_TYPES.MOUNTAIN_ROCK || 
+                                    neighbor.type === TILE_TYPES.MOUNTAIN_ROCK_DARK) {
+                                    adjacentToMountain = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (adjacentToMountain) break;
+                    }
+                    if (adjacentToMountain) {
+                        state.map.tiles[y][x].type = TILE_TYPES.CAVE_ENTRANCE;
+                        // Очищаем место вокруг входа (чтобы не было деревьев)
+                        for (let dy = -2; dy <= 2; dy++) {
+                            for (let dx = -2; dx <= 2; dx++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                if (nx >= 0 && nx < state.map.width && ny >= 0 && ny < state.map.height) {
+                                    const neighbor = state.map.tiles[ny][nx];
+                                    if (neighbor.type === TILE_TYPES.TREE) {
+                                        neighbor.type = TILE_TYPES.GRASS;
+                                    }
+                                }
+                            }
+                        }
+                        placed = true;
+                    }
+                }
+                attempts++;
+            }
+        }
+
+        state.currentMap = 'overworld';
+        state.overworldMap = {
+            tiles: JSON.parse(JSON.stringify(state.map.tiles)),
+            width: state.map.width,
+            height: state.map.height,
+            enemies: []
+        };
+        
+        state.map.chunks.forEach(row => row.forEach(c => c.dirty = true));
+    }
+}
+
+// Keep original initMap for regenerateWorld
+function initMap() {
+    for (let i = 1; i <= 6; i++) {
+        initMapPartial(i);
+    }
+}
+
+window.addEventListener('resize', resize);
+resize();
+// Start loading the game
+initGame();
+
+window.regenerateWorld = async function() {
+    // Reset game state
+    state.player.hp = state.player.maxHp;
+    updateHPUI();
+    state.time = { tick: 0, day: 1, hour: 8, minute: 0 };
+    updateTimeUI();
+    state.resources = { silver: 100, stone: 200, wood: 300, gold: 0, food: 200 };
+    updateResourceUI();
+    state.entities = [];
+    state.enemies = [];
+    state.jobs = [];
+    state.depletedBushes = [];
+    state.camera.transition.active = false;
+    state.overworldMap = null;
+    state.caveMap = null;
+    
+    // Show loading screen
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.classList.remove('hidden');
+    }
+    
+    // Wait for loading screen to show
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Re-initialize game
+    await initGame();
+};
