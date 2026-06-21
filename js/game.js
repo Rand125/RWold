@@ -2589,6 +2589,7 @@ window.addEventListener('mousemove', (e) => {
     if (state.combat.attackMode && !isOverUI) {
         // Курсор атаки (меч)
         customCursor.textContent = ''; // Очищаем текст, используем изображение
+        customCursor.style.backgroundImage = ''; // Удаляем инлайновый фон, чтобы сработал CSS
         customCursor.classList.add('cursor-attack');
         customCursor.style.display = 'block';
     } else if (isOverUI) {
